@@ -207,7 +207,7 @@ impl<N, O: Operation<N>> SegmentPoint<N, O> {
             None => resr,
             Some(Owned(mut left)) => {
                 if let Some(ref right) = resr {
-                    self.op.combine_mut(&mut left, right.borrow());
+                    self.op.combine_mut(&mut left, right.as_ref());
                 }
                 Some(Owned(left))
             }

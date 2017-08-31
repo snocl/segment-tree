@@ -357,7 +357,7 @@ mod tests {
             compute_prefix_sum(&mut vec);
             for i in 0..vec.len() {
                 assert_eq!(fenwick.query(i), vec[i]);
-                assert_eq!(fenwick.query_noclone(i).borrow(), &vec[i]);
+                assert_eq!(fenwick.query_noclone(i).as_ref(), &vec[i]);
             }
         }
     }
