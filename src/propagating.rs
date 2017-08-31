@@ -24,7 +24,7 @@ use ops::{Commutative, Identity};
 /// let mut tree = PointSegment::build(repeat(0).take(1_000_000).collect(), Add);
 ///
 /// // add one to every value between 200 and 1000
-/// tree.modify(200, 500_000, &1);
+/// tree.modify(200, 500_000, 1);
 /// assert_eq!(0, tree.query(100));
 /// assert_eq!(1, tree.query(200));
 /// assert_eq!(1, tree.query(500));
@@ -32,7 +32,7 @@ use ops::{Commutative, Identity};
 /// assert_eq!(0, tree.query(500_000));
 ///
 /// // add five to every value between 0 and 1000
-/// tree.modify(0, 1000, &5);
+/// tree.modify(0, 1000, 5);
 /// assert_eq!(5, tree.query(10));
 /// assert_eq!(6, tree.query(500));
 /// assert_eq!(1, tree.query(10_000));
@@ -138,6 +138,12 @@ impl<N, O> PointSegment<N, O>
     #[inline]
     pub fn len(&self) -> usize {
         self.n
+    }
+
+    /// Returns true if `self` is empty.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.n == 0
     }
 }
 

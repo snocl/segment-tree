@@ -102,7 +102,7 @@ fn lsb(i: usize) -> usize {
     i & (1 + !i)
 }
 
-/// Could also be done with slice_at_mut, but that's a giant pain
+// Could also be done with `slice_at_mut`, but that'd be a giant pain.
 #[inline]
 unsafe fn combine_mut<N, O>(buf: &mut Vec<N>, i: usize, j: usize, op: &O)
     where O: Commutative<N>
@@ -112,7 +112,7 @@ unsafe fn combine_mut<N, O>(buf: &mut Vec<N>, i: usize, j: usize, op: &O)
     op.combine_mut(&mut *ptr1, &*ptr2);
 }
 
-/// Could also be done with slice_at_mut, but that's a giant pain
+// Could also be done with `slice_at_mut`, but that'd be a giant pain.
 #[inline]
 unsafe fn invert_mut<N, O>(buf: &mut Vec<N>, i: usize, j: usize, op: &O)
     where O: PartialInvert<N>
@@ -142,8 +142,15 @@ impl<N, O> PrefixPoint<N, O>
 
     /// Returns the number of values in this tree.
     /// Uses `O(1)` time.
+    #[inline]
     pub fn len(&self) -> usize {
         self.buf.len()
+    }
+
+    /// Returns true if `self` is empty.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.buf.is_empty()
     }
 
     /// Computes `a[0] * a[1] * ... * a[i]`.  Note that `i` is inclusive.
@@ -173,7 +180,7 @@ impl<N, O> PrefixPoint<N, O>
             let right = &self.buf[i - 1];
 
             let result = match sum {
-                Borrowed(ref left) => self.op.combine(left, right),
+                Borrowed(left) => self.op.combine(left, right),
                 Owned(mut left) => {
                     self.op.combine_mut(&mut left, right);
                     left

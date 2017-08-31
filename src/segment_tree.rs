@@ -169,7 +169,7 @@ impl<N, O: Operation<N>> SegmentPoint<N, O> {
     ///
     /// [`query_commut`]: struct.SegmentPoint.html#method.query_commut
     /// [`query`]: struct.SegmentPoint.html#method.query
-    pub fn query_noclone<'a>(&'a self, mut l: usize, mut r: usize) -> Option<MaybeOwned<'a, N>> {
+    pub fn query_noclone(&self, mut l: usize, mut r: usize) -> Option<MaybeOwned<N>> {
         let mut resl = None;
         let mut resr = None;
         l += self.n;
@@ -192,7 +192,7 @@ impl<N, O: Operation<N>> SegmentPoint<N, O> {
                 let left = &self.buf[r];
                 resr = Some(match resr {
                     None => Borrowed(left),
-                    Some(Borrowed(ref right)) => Owned(self.op.combine(left, right)),
+                    Some(Borrowed(right)) => Owned(self.op.combine(left, right)),
                     Some(Owned(mut right)) => {
                         self.op.combine_mut_right(left, &mut right);
                         Owned(right)
@@ -286,6 +286,12 @@ impl<N, O: Operation<N>> SegmentPoint<N, O> {
     #[inline]
     pub fn len(&self) -> usize {
         self.n
+    }
+
+    /// Returns true if `self` is empty.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.n == 0
     }
 
     /// Builds a tree using the given buffer.  The buffer must be even in size.
