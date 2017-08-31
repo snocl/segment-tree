@@ -28,18 +28,19 @@
 //! [`PrefixPoint`]: struct.PrefixPoint.html
 //! [`ops`]: ops/index.html
 
-pub mod ops;
-pub mod maybe_owned;
-pub use fenwick::PrefixPoint;
-pub use propagating::PointSegment;
-pub use segment_tree::SegmentPoint;
-
-mod fenwick;
-mod propagating;
-mod segment_tree;
-
 #[cfg(test)]
 extern crate rand;
 
 #[cfg(feature = "with-num")]
 extern crate num;
+
+pub use fenwick::PrefixPoint;
+pub use propagating::PointSegment;
+pub use segment_tree::SegmentPoint;
+
+pub mod ops;
+pub mod maybe_owned;
+
+mod fenwick;
+mod propagating;
+mod segment_tree;

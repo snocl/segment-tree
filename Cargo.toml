@@ -13,7 +13,12 @@ license = "MIT"
 with-num = ["num"]
 
 [dependencies]
-num = { version = "0.1", optional = true }
+
+[dependencies.num]
+version = "0.1"
+optional = true
+default-features = false
+features = ["bigint", "num-integer", "rational", "complex"]
 
 [dev-dependencies]
 rand = "0.3"
