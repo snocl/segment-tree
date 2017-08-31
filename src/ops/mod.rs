@@ -9,7 +9,7 @@
 
 use std::cmp;
 use std::num::Wrapping;
-use std::ops::{Add as OpAdd, Sub, Mul as OpMul, BitXor, BitAnd, BitOr};
+use std::ops::{Add as OpAdd, Sub, Mul as OpMul, Div, BitXor, BitAnd, BitOr};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::{u8, u16, u32, u64, i8, i16, i32, i64, usize, isize, f32, f64};
@@ -85,7 +85,9 @@ pub trait PartialInvert<N>: Commutative<N> {
 
 pub trait Invert<N>: PartialInvert<N> {}
 
-impl<'a, N, O> Operation<N> for &'a O where O: Operation<N> {
+impl<'a, N, O> Operation<N> for &'a O
+    where O: Operation<N>
+{
     #[inline]
     fn combine(&self, left: &N, right: &N) -> N {
         (**self).combine(left, right)
@@ -119,14 +121,18 @@ impl<'a, N, O> Operation<N> for &'a O where O: Operation<N> {
 
 impl<'a, N, O> Commutative<N> for &'a O where O: Commutative<N> {}
 
-impl<'a, N, O> Identity<N> for &'a O where O: Identity<N> {
+impl<'a, N, O> Identity<N> for &'a O
+    where O: Identity<N>
+{
     #[inline]
     fn identity(&self) -> N {
         (**self).identity()
     }
 }
 
-impl<'a, N, O> PartialInvert<N> for &'a O where O: PartialInvert<N> {
+impl<'a, N, O> PartialInvert<N> for &'a O
+    where O: PartialInvert<N>
+{
     #[inline]
     fn invert_mut(&self, result: &mut N, right: &N) {
         (**self).invert_mut(result, right);
@@ -202,6 +208,64 @@ macro_rules! impl_op_deref {
 impl_op_deref!(O, Box<O>);
 impl_op_deref!(O, Rc<O>);
 impl_op_deref!(O, Arc<O>);
+
+pub trait IsNonzero {
+    fn is_nonzero(&self) -> bool;
+}
+
+macro_rules! impl_is_nonzero {
+    ($N:ty) => {
+        impl IsNonzero for $N {
+            #[inline]
+            fn is_nonzero(&self) -> bool {
+                *self != 0
+            }
+        }
+    };
+}
+
+impl_is_nonzero!(u8);
+impl_is_nonzero!(u16);
+impl_is_nonzero!(u32);
+impl_is_nonzero!(u64);
+impl_is_nonzero!(i8);
+impl_is_nonzero!(i16);
+impl_is_nonzero!(i32);
+impl_is_nonzero!(i64);
+impl_is_nonzero!(usize);
+impl_is_nonzero!(isize);
+
+#[derive(Clone, Copy, Eq, PartialEq, Debug, Hash, PartialOrd, Ord)]
+pub struct Nonzero<N>(N);
+
+impl<N> Nonzero<N>
+    where N: IsNonzero
+{
+    #[inline]
+    pub fn new(value: N) -> Nonzero<N> {
+        assert!(value.is_nonzero());
+        Nonzero(value)
+    }
+}
+
+impl<N> Nonzero<N> {
+    #[inline]
+    pub fn new_unchecked(value: N) -> Nonzero<N> {
+        Nonzero(value)
+    }
+
+    #[inline]
+    pub fn into_inner(self) -> N {
+        self.0
+    }
+}
+
+impl<N> AsRef<N> for Nonzero<N> {
+    #[inline]
+    fn as_ref(&self) -> &N {
+        &self.0
+    }
+}
 
 /// Each node contains the sum of the interval it represents.
 #[derive(Clone, Copy, Eq, PartialEq, Debug, Default, Hash)]
@@ -282,6 +346,33 @@ macro_rules! impl_primitive_op_inv {
     };
 }
 
+macro_rules! impl_primitive_op_partial_inv_deref {
+    ($O:ty, $N:ty, $init:expr, $op:ident, $inv:ident, $identity:expr) => {
+        impl Operation<$N> for $O {
+            #[inline]
+            fn combine(&self, left: &$N, right: &$N) -> $N {
+                $init(left.into_inner().$op(right.into_inner()))
+            }
+        }
+
+        impl Commutative<$N> for $O {}
+
+        impl Identity<$N> for $O {
+            #[inline]
+            fn identity(&self) -> $N {
+                $identity
+            }
+        }
+
+        impl PartialInvert<$N> for $O {
+            #[inline]
+            fn invert_mut(&self, result: &mut $N, arg: &$N) {
+                *result = $init(result.into_inner().$inv(arg.into_inner()));
+            }
+        }
+    };
+}
+
 macro_rules! impl_primitive_op_checked {
     ($O:ty, $N:ty, $op:ident, $identity:expr) => {
         impl Operation<Option<$N>> for $O {
@@ -310,6 +401,7 @@ macro_rules! impl_primitive_int {
         impl_primitive_op_inv!(WrappingAdd, $N, wrapping_add, wrapping_sub, 0);
         impl_primitive_op!(SaturatingAdd, $N, saturating_add, 0);
         impl_primitive_op!(Mul, $N, mul, 1);
+        impl_primitive_op_partial_inv_deref!(Mul, Nonzero<$N>, Nonzero::new, mul, div, Nonzero::new_unchecked(1));
         impl_primitive_op!(WrappingMul, $N, wrapping_mul, 0);
         impl_primitive_op!(SaturatingMul, $N, saturating_mul, 1);
 
@@ -330,7 +422,7 @@ macro_rules! impl_primitive_unsigned_int {
         impl_primitive_int!($N);
 
         impl_primitive_op_partial_inv!(Add, $N, add, sub, 0);
-    }
+    };
 }
 
 macro_rules! impl_primitive_signed_int {
@@ -338,7 +430,7 @@ macro_rules! impl_primitive_signed_int {
         impl_primitive_int!($N);
 
         impl_primitive_op_inv!(Add, $N, add, sub, 0);
-    }
+    };
 }
 
 macro_rules! impl_primitive_float {
@@ -565,10 +657,16 @@ impl<N, M, A, B> Operation<(N, M)> for Pair<A, B>
     }
 }
 
-impl<N, M, A, B> Commutative<(N, M)> for Pair<A, B> where A: Commutative<N>, B: Commutative<M> {}
+impl<N, M, A, B> Commutative<(N, M)> for Pair<A, B>
+    where A: Commutative<N>,
+          B: Commutative<M>
+{
+}
 
-
-impl<N, M, A, B> Identity<(N, M)> for Pair<A, B> where A: Identity<N>, B: Identity<M> {
+impl<N, M, A, B> Identity<(N, M)> for Pair<A, B>
+    where A: Identity<N>,
+          B: Identity<M>
+{
     fn identity(&self) -> (N, M) {
         (self.0.identity(), self.1.identity())
     }
@@ -590,7 +688,11 @@ impl<N, M, A, B> PartialInvert<(N, M)> for Pair<A, B>
     }
 }
 
-impl<N, M, A, B> Invert<(N, M)> for Pair<A, B> where A: Invert<N>, B: Invert<M> {}
+impl<N, M, A, B> Invert<(N, M)> for Pair<A, B>
+    where A: Invert<N>,
+          B: Invert<M>
+{
+}
 
 /// Adds an identity to an operation by wrapping the type in [`Option`]. Clones when combined with
 /// None.
@@ -657,9 +759,16 @@ impl<N, O> Operation<Option<N>> for WithIdentity<O>
     }
 }
 
-impl<N, O> Commutative<Option<N>> for WithIdentity<O> where N: Clone, O: Operation<N> {}
+impl<N, O> Commutative<Option<N>> for WithIdentity<O>
+    where N: Clone,
+          O: Operation<N>
+{
+}
 
-impl<N, O> Identity<Option<N>> for WithIdentity<O> where N: Clone, O: Operation<N> {
+impl<N, O> Identity<Option<N>> for WithIdentity<O>
+    where N: Clone,
+          O: Operation<N>
+{
     #[inline]
     fn identity(&self) -> Option<N> {
         None

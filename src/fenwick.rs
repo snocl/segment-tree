@@ -263,7 +263,6 @@ impl<N, O> PrefixPoint<N, O>
         }
         buf
     }
-
 }
 
 impl<N, O> PrefixPoint<N, O>

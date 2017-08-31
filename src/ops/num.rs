@@ -6,9 +6,23 @@ use std::ops::{Add as OpAdd, Sub, Mul as OpMul, Div};
 use num::{BigInt, BigUint, Complex, Zero, One, Signed, Integer};
 use num::rational::Ratio;
 
-use ops::{Operation, Commutative, Identity, PartialInvert, Invert, Add, Mul};
+use ops::{Operation, Commutative, Identity, PartialInvert, Invert, IsNonzero, Nonzero, Add, Mul};
 
 use std::mem;
+
+impl IsNonzero for BigInt {
+    #[inline]
+    fn is_nonzero(&self) -> bool {
+        !self.is_zero()
+    }
+}
+
+impl IsNonzero for BigUint {
+    #[inline]
+    fn is_nonzero(&self) -> bool {
+        !self.is_zero()
+    }
+}
 
 macro_rules! impl_big_op {
     ($O:ty, $N:ty, $op:ident, $identity:expr) => {
@@ -79,6 +93,80 @@ impl_big_op!(Mul, BigUint, mul, One::one());
 
 impl_big_op_inv!(Add, BigInt, add, sub, Zero::zero());
 impl_big_op!(Mul, BigInt, mul, One::one());
+
+macro_rules! impl_big_nonzero {
+    ($N:ty) => {
+        impl Operation<Nonzero<$N>> for Mul {
+            #[inline]
+            fn combine(&self, left: &Nonzero<$N>, right: &Nonzero<$N>) -> Nonzero<$N> {
+                let left = left.as_ref().clone();
+                let right = right.as_ref();
+
+                Nonzero::new(left.mul(right))
+            }
+
+            #[inline]
+            fn combine_left_mut(&self, left: &mut Nonzero<$N>, right: &Nonzero<$N>) {
+                // This is intentionally garbage; any mem::replace means
+                // we aren't unwind safe in any case.
+                let tmp = mem::replace(left, Nonzero::new_unchecked(Zero::zero())).into_inner();
+                let right = right.as_ref();
+
+                *left = Nonzero::new(tmp.mul(right));
+            }
+
+            #[inline]
+            fn combine_right_mut(&self, left: &Nonzero<$N>, right: &mut Nonzero<$N>) {
+                // This is intentionally garbage; any mem::replace means
+                // we aren't unwind safe in any case.
+                let tmp = mem::replace(right, Nonzero::new_unchecked(Zero::zero())).into_inner();
+                let left = left.as_ref();
+
+                *right = Nonzero::new(left.mul(tmp));
+            }
+
+            #[inline]
+            fn combine_left(&self, left: Nonzero<$N>, right: &Nonzero<$N>) -> Nonzero<$N> {
+                let left = left.into_inner();
+                let right = right.as_ref();
+
+                Nonzero::new(left.mul(right))
+            }
+
+            #[inline]
+            fn combine_right(&self, left: &Nonzero<$N>, right: Nonzero<$N>) -> Nonzero<$N> {
+                let left = left.as_ref();
+                let right = right.into_inner();
+
+                Nonzero::new(left.mul(right))
+            }
+        }
+
+        impl Commutative<Nonzero<$N>> for Mul {}
+
+        impl Identity<Nonzero<$N>> for Mul {
+            #[inline]
+            fn identity(&self) -> Nonzero<$N> {
+                Nonzero::new_unchecked(One::one())
+            }
+        }
+
+        impl PartialInvert<Nonzero<$N>> for Mul {
+            #[inline]
+            fn invert_mut(&self, result: &mut Nonzero<$N>, arg: &Nonzero<$N>) {
+                // This is intentionally garbage; any mem::replace means
+                // we aren't unwind safe in any case.
+                let tmp = mem::replace(result, Nonzero::new_unchecked(Zero::zero())).into_inner();
+                let arg = arg.as_ref();
+
+                *result = Nonzero::new(tmp.div(arg));
+            }
+        }
+    };
+}
+
+impl_big_nonzero!(BigUint);
+impl_big_nonzero!(BigInt);
 
 impl<N> Operation<Complex<N>> for Add
     where Add: Operation<N>
@@ -160,11 +248,11 @@ impl<N> PartialInvert<Complex<N>> for Add
     }
 }
 
-macro_rules! impl_ratio_op_partial_inv {
-    ($O:ty, $op:ident, $inv:ident, $identity:expr) => {
-        // It turns out that `Ratio` always clones its arguments, so there's no
-        // gain in using the specialized versions of the methods.
+// It turns out that `Ratio` always clones its arguments, so there's no
+// gain in using the specialized versions of the methods.
 
+macro_rules! impl_ratio_op {
+    ($O:ty, $op:ident, $identity:expr) => {
         impl<N> Operation<Ratio<N>> for $O
             where N: Clone + Integer
         {
@@ -184,28 +272,68 @@ macro_rules! impl_ratio_op_partial_inv {
                 $identity
             }
         }
-
-        impl<N> PartialInvert<Ratio<N>> for $O
-            where N: Clone + Integer
-        {
-            #[inline]
-            fn invert_mut(&self, result: &mut Ratio<N>, arg: &Ratio<N>) {
-                *result = (&&*result).$inv(arg);
-            }
-        }
     };
 }
 
-macro_rules! impl_ratio_op_inv {
-    ($O:ty, $op:ident, $inv:ident, $identity:expr) => {
-        impl_ratio_op_partial_inv!($O, $op, $inv, $identity);
-
-        impl<N> Invert<Ratio<N>> for $O where N: Clone + Integer + Signed {}
-    };
+impl<N> IsNonzero for Ratio<N>
+    where N: Clone + Integer
+{
+    #[inline]
+    fn is_nonzero(&self) -> bool {
+        !self.is_zero()
+    }
 }
 
-impl_ratio_op_inv!(Add, add, sub, One::one());
-impl_ratio_op_partial_inv!(Mul, mul, div, Zero::zero());
+impl_ratio_op!(Add, add, Zero::zero());
 
-// Mul is not Invert<Ratio<N>> even when N: Signed, since
-// multiplication by 0 isn't invertible.
+impl<N> PartialInvert<Ratio<N>> for Add
+    where N: Clone + Integer
+{
+    #[inline]
+    fn invert_mut(&self, result: &mut Ratio<N>, arg: &Ratio<N>) {
+        *result = (&&*result).sub(arg);
+    }
+}
+
+impl<N> Invert<Ratio<N>> for Add where N: Clone + Integer + Signed {}
+
+impl_ratio_op!(Mul, mul, One::one());
+
+impl<N> Operation<Nonzero<Ratio<N>>> for Mul
+    where N: Clone + Integer
+{
+    #[inline]
+    fn combine(&self, left: &Nonzero<Ratio<N>>, right: &Nonzero<Ratio<N>>) -> Nonzero<Ratio<N>> {
+        let left = left.as_ref();
+        let right = right.as_ref();
+
+        Nonzero::new(left.mul(right))
+    }
+}
+
+impl<N> Commutative<Nonzero<Ratio<N>>> for Mul where N: Clone + Integer {}
+
+impl<N> Identity<Nonzero<Ratio<N>>> for Mul
+    where N: Clone + Integer
+{
+    #[inline]
+    fn identity(&self) -> Nonzero<Ratio<N>> {
+        Nonzero::new_unchecked(One::one())
+    }
+}
+
+impl<N> PartialInvert<Nonzero<Ratio<N>>> for Mul
+    where N: Clone + Integer
+{
+    #[inline]
+    fn invert_mut(&self, result: &mut Nonzero<Ratio<N>>, arg: &Nonzero<Ratio<N>>) {
+        *result = {
+            let tmp = result.as_ref();
+            let arg = arg.as_ref();
+
+            Nonzero::new(tmp.div(arg))
+        };
+    }
+}
+
+impl<N> Invert<Nonzero<Ratio<N>>> for Mul where N: Clone + Integer {}
