@@ -56,7 +56,9 @@ impl<'a, T: 'a> AsRef<T> for MaybeOwned<'a, T> {
     }
 }
 
-impl<'a, T: 'a> PartialEq for MaybeOwned<'a, T> where T: PartialEq {
+impl<'a, T: 'a> PartialEq for MaybeOwned<'a, T>
+    where T: PartialEq
+{
     #[inline]
     fn eq(&self, other: &MaybeOwned<T>) -> bool {
         self.as_ref() == other.as_ref()
