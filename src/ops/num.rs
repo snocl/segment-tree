@@ -33,25 +33,15 @@ macro_rules! impl_big_op {
             }
 
             #[inline]
-            fn combine_left_mut(&self, left: &mut $N, right: &$N) {
-                let tmp = mem::replace(left, Zero::zero());
+            fn combine_mut(&self, left: &mut $N, right: &$N) {
+                let tmp = mem::replace(left, Default::default());
                 *left = tmp.$op(right);
             }
 
             #[inline]
-            fn combine_right_mut(&self, left: &$N, right: &mut $N) {
-                let tmp = mem::replace(right, Zero::zero());
+            fn combine_mut_right(&self, left: &$N, right: &mut $N) {
+                let tmp = mem::replace(right, Default::default());
                 *right = left.$op(tmp);
-            }
-
-            #[inline]
-            fn combine_left(&self, left: $N, right: &$N) -> $N {
-                left.$op(right)
-            }
-
-            #[inline]
-            fn combine_right(&self, left: &$N, right: $N) -> $N {
-                left.$op(right)
             }
         }
 
@@ -72,8 +62,13 @@ macro_rules! impl_big_op_partial_inv {
 
         impl PartialInvert<$N> for $O {
             #[inline]
+            fn invert(&self, result: &$N, arg: &$N) -> $N {
+                result.clone().$inv(arg)
+            }
+
+            #[inline]
             fn invert_mut(&self, result: &mut $N, arg: &$N) {
-                let tmp = mem::replace(result, Zero::zero());
+                let tmp = mem::replace(result, Default::default());
                 *result = tmp.$inv(arg);
             }
         }
@@ -106,39 +101,25 @@ macro_rules! impl_big_nonzero {
             }
 
             #[inline]
-            fn combine_left_mut(&self, left: &mut Nonzero<$N>, right: &Nonzero<$N>) {
-                // This is intentionally garbage; any mem::replace means
-                // we aren't unwind safe in any case.
-                let tmp = mem::replace(left, Nonzero::new_unchecked(Zero::zero())).into_inner();
+            fn combine_mut(&self, left: &mut Nonzero<$N>, right: &Nonzero<$N>) {
+                // This invalid value is okay here, since we don't try to be unwind safe.
+                let garbage = Nonzero::new_unchecked(Default::default());
+
+                let tmp = mem::replace(left, garbage).into_inner();
                 let right = right.as_ref();
 
                 *left = Nonzero::new(tmp.mul(right));
             }
 
             #[inline]
-            fn combine_right_mut(&self, left: &Nonzero<$N>, right: &mut Nonzero<$N>) {
-                // This is intentionally garbage; any mem::replace means
-                // we aren't unwind safe in any case.
-                let tmp = mem::replace(right, Nonzero::new_unchecked(Zero::zero())).into_inner();
+            fn combine_mut_right(&self, left: &Nonzero<$N>, right: &mut Nonzero<$N>) {
+                // This invalid value is okay here, since we don't try to be unwind safe.
+                let garbage = Nonzero::new_unchecked(Default::default());
+
+                let tmp = mem::replace(right, garbage).into_inner();
                 let left = left.as_ref();
 
                 *right = Nonzero::new(left.mul(tmp));
-            }
-
-            #[inline]
-            fn combine_left(&self, left: Nonzero<$N>, right: &Nonzero<$N>) -> Nonzero<$N> {
-                let left = left.into_inner();
-                let right = right.as_ref();
-
-                Nonzero::new(left.mul(right))
-            }
-
-            #[inline]
-            fn combine_right(&self, left: &Nonzero<$N>, right: Nonzero<$N>) -> Nonzero<$N> {
-                let left = left.as_ref();
-                let right = right.into_inner();
-
-                Nonzero::new(left.mul(right))
             }
         }
 
@@ -153,10 +134,19 @@ macro_rules! impl_big_nonzero {
 
         impl PartialInvert<Nonzero<$N>> for Mul {
             #[inline]
+            fn invert(&self, result: &Nonzero<$N>, arg: &Nonzero<$N>) -> Nonzero<$N> {
+                let result = result.as_ref().clone();
+                let arg = arg.as_ref();
+
+                Nonzero::new(result.div(arg))
+            }
+
+            #[inline]
             fn invert_mut(&self, result: &mut Nonzero<$N>, arg: &Nonzero<$N>) {
-                // This is intentionally garbage; any mem::replace means
-                // we aren't unwind safe in any case.
-                let tmp = mem::replace(result, Nonzero::new_unchecked(Zero::zero())).into_inner();
+                // This invalid value is okay here, since we don't try to be unwind safe.
+                let garbage = Nonzero::new_unchecked(Default::default());
+
+                let tmp = mem::replace(result, garbage).into_inner();
                 let arg = arg.as_ref();
 
                 *result = Nonzero::new(tmp.div(arg));
@@ -180,39 +170,15 @@ impl<N> Operation<Complex<N>> for Add
     }
 
     #[inline]
-    fn combine_left_mut(&self, left: &mut Complex<N>, right: &Complex<N>) {
-        self.combine_left_mut(&mut left.re, &right.re);
-        self.combine_left_mut(&mut left.im, &right.im);
+    fn combine_mut(&self, left: &mut Complex<N>, right: &Complex<N>) {
+        self.combine_mut(&mut left.re, &right.re);
+        self.combine_mut(&mut left.im, &right.im);
     }
 
     #[inline]
-    fn combine_right_mut(&self, left: &Complex<N>, right: &mut Complex<N>) {
-        self.combine_right_mut(&left.re, &mut right.re);
-        self.combine_right_mut(&left.im, &mut right.im);
-    }
-
-    #[inline]
-    fn combine_left(&self, left: Complex<N>, right: &Complex<N>) -> Complex<N> {
-        Complex {
-            re: self.combine_left(left.re, &right.re),
-            im: self.combine_left(left.im, &right.im),
-        }
-    }
-
-    #[inline]
-    fn combine_right(&self, left: &Complex<N>, right: Complex<N>) -> Complex<N> {
-        Complex {
-            re: self.combine_right(&left.re, right.re),
-            im: self.combine_right(&left.im, right.im),
-        }
-    }
-
-    #[inline]
-    fn combine_both(&self, left: Complex<N>, right: Complex<N>) -> Complex<N> {
-        Complex {
-            re: self.combine_both(left.re, right.re),
-            im: self.combine_both(left.im, right.im),
-        }
+    fn combine_mut_right(&self, left: &Complex<N>, right: &mut Complex<N>) {
+        self.combine_mut_right(&left.re, &mut right.re);
+        self.combine_mut_right(&left.im, &mut right.im);
     }
 }
 
@@ -234,17 +200,17 @@ impl<N> PartialInvert<Complex<N>> for Add
     where Add: PartialInvert<N>
 {
     #[inline]
-    fn invert_mut(&self, result: &mut Complex<N>, arg: &Complex<N>) {
-        self.invert_mut(&mut result.re, &arg.re);
-        self.invert_mut(&mut result.im, &arg.im);
+    fn invert(&self, result: &Complex<N>, arg: &Complex<N>) -> Complex<N> {
+        Complex {
+            re: self.invert(&result.re, &arg.re),
+            im: self.invert(&result.im, &arg.im),
+        }
     }
 
     #[inline]
-    fn invert(&self, result: Complex<N>, arg: &Complex<N>) -> Complex<N> {
-        Complex {
-            re: self.invert(result.re, &arg.re),
-            im: self.invert(result.im, &arg.im),
-        }
+    fn invert_mut(&self, result: &mut Complex<N>, arg: &Complex<N>) {
+        self.invert_mut(&mut result.re, &arg.re);
+        self.invert_mut(&mut result.im, &arg.im);
     }
 }
 
@@ -290,8 +256,8 @@ impl<N> PartialInvert<Ratio<N>> for Add
     where N: Clone + Integer
 {
     #[inline]
-    fn invert_mut(&self, result: &mut Ratio<N>, arg: &Ratio<N>) {
-        *result = (&&*result).sub(arg);
+    fn invert(&self, result: &Ratio<N>, arg: &Ratio<N>) -> Ratio<N> {
+        result.sub(arg)
     }
 }
 
@@ -326,13 +292,11 @@ impl<N> PartialInvert<Nonzero<Ratio<N>>> for Mul
     where N: Clone + Integer
 {
     #[inline]
-    fn invert_mut(&self, result: &mut Nonzero<Ratio<N>>, arg: &Nonzero<Ratio<N>>) {
-        *result = {
-            let tmp = result.as_ref();
-            let arg = arg.as_ref();
+    fn invert(&self, result: &Nonzero<Ratio<N>>, arg: &Nonzero<Ratio<N>>) -> Nonzero<Ratio<N>> {
+        let result = result.as_ref();
+        let arg = arg.as_ref();
 
-            Nonzero::new(tmp.div(arg))
-        };
+        Nonzero::new(result.div(arg))
     }
 }
 
