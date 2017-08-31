@@ -71,7 +71,7 @@ impl<'a, T: 'a> PartialEq for MaybeOwned<'a, T>
 }
 impl<'a, T: 'a> Eq for MaybeOwned<'a, T> where T: Eq {}
 
-impl<'a, T: 'a + PartialOrd> PartialOrd for MaybeOwned<'a, T>
+impl<'a, T: 'a> PartialOrd for MaybeOwned<'a, T>
     where T: PartialOrd
 {
     #[inline]
@@ -127,7 +127,9 @@ impl<'a, T: 'a> Default for MaybeOwned<'a, T>
     }
 }
 
-impl<'a, T: 'a + Hash> Hash for MaybeOwned<'a, T> {
+impl<'a, T: 'a> Hash for MaybeOwned<'a, T>
+    where T: Hash
+{
     #[inline]
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.as_ref().hash(state)
