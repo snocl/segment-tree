@@ -8,7 +8,7 @@ use ops::{Commutative, Identity};
 /// This tree allocates `2n * sizeof(N)` bytes of memory.
 ///
 /// This tree is implemented using a binary tree, where each node contains the changes that need
-/// to be propogated to its children.
+/// to be propagated to its children.
 ///
 /// # Examples
 ///
@@ -24,19 +24,19 @@ use ops::{Commutative, Identity};
 /// let mut tree = PointSegment::build(repeat(0).take(1_000_000).collect(), Add);
 ///
 /// // add one to every value between 200 and 1000
-/// tree.modify(200, 500_000, 1);
-/// assert_eq!(tree.query(100), 0);
-/// assert_eq!(tree.query(200), 1);
-/// assert_eq!(tree.query(500), 1);
-/// assert_eq!(tree.query(499_999), 1);
-/// assert_eq!(tree.query(500_000), 0);
+/// tree.modify(200, 500_000, &1);
+/// assert_eq!(0, tree.query(100));
+/// assert_eq!(1, tree.query(200));
+/// assert_eq!(1, tree.query(500));
+/// assert_eq!(1, tree.query(499_999));
+/// assert_eq!(0, tree.query(500_000));
 ///
 /// // add five to every value between 0 and 1000
-/// tree.modify(0, 1000, 5);
-/// assert_eq!(tree.query(10), 5);
-/// assert_eq!(tree.query(500), 6);
-/// assert_eq!(tree.query(10_000), 1);
-/// assert_eq!(tree.query(600_000), 0);
+/// tree.modify(0, 1000, &5);
+/// assert_eq!(5, tree.query(10));
+/// assert_eq!(6, tree.query(500));
+/// assert_eq!(1, tree.query(10_000));
+/// assert_eq!(0, tree.query(600_000));
 /// ```
 pub struct PointSegment<N, O>
     where O: Commutative<N> + Identity<N>
@@ -46,7 +46,9 @@ pub struct PointSegment<N, O>
     op: O,
 }
 
-impl<N, O: Commutative<N> + Identity<N>> PointSegment<N, O> {
+impl<N, O> PointSegment<N, O>
+    where O: Commutative<N> + Identity<N>
+{
     /// Builds a tree using the given buffer. If the given buffer is less than half full, this
     /// function allocates.
     /// Uses `O(len)` time.
@@ -94,7 +96,7 @@ impl<N, O: Commutative<N> + Identity<N>> PointSegment<N, O> {
         p += self.n;
         let mut res = self.op.identity();
         while p > 0 {
-            res = self.op.combine_left(res, &self.buf[p]);
+            self.op.combine_mut(&mut res, &self.buf[p]);
             p >>= 1;
         }
         res
@@ -102,17 +104,17 @@ impl<N, O: Commutative<N> + Identity<N>> PointSegment<N, O> {
 
     /// Combine every value in the interval with `delta`.
     /// Uses `O(log(len))` time.
-    pub fn modify(&mut self, mut l: usize, mut r: usize, delta: N) {
+    pub fn modify(&mut self, mut l: usize, mut r: usize, delta: &N) {
         l += self.n;
         r += self.n;
         while l < r {
             if l & 1 == 1 {
-                self.op.combine_left_mut(&mut self.buf[l], &delta);
+                self.op.combine_mut(&mut self.buf[l], delta);
                 l += 1;
             }
             if r & 1 == 1 {
                 r -= 1;
-                self.op.combine_left_mut(&mut self.buf[r], &delta);
+                self.op.combine_mut(&mut self.buf[r], delta);
             }
             l >>= 1;
             r >>= 1;
@@ -122,11 +124,11 @@ impl<N, O: Commutative<N> + Identity<N>> PointSegment<N, O> {
     /// Propogate all changes to the leaves in the tree and return a mutable slice containing the
     /// leaves.
     /// Uses `O(len)` time.
-    pub fn propogate(&mut self) -> &mut [N] {
+    pub fn propagate(&mut self) -> &mut [N] {
         for i in 1..self.n {
             let prev = mem::replace(&mut self.buf[i], self.op.identity());
-            self.op.combine_left_mut(&mut self.buf[i << 1], &prev);
-            self.op.combine_left_mut(&mut self.buf[i << 1 | 1], &prev);
+            self.op.combine_mut(&mut self.buf[i << 1], &prev);
+            self.op.combine_mut(&mut self.buf[i << 1 | 1], &prev);
         }
         &mut self.buf[self.n..]
     }
@@ -162,10 +164,12 @@ impl<N, O: Identity<N> + Commutative<N> + Default> Default for PointSegment<N, O
 
 #[cfg(test)]
 mod tests {
-    use propagating::*;
-    use ops::*;
-    use rand::{Rng, thread_rng};
     use std::num::Wrapping;
+
+    use rand::{Rng, thread_rng};
+
+    use ops::*;
+    use super::*;
 
     type Num = Wrapping<i32>;
 
@@ -189,12 +193,12 @@ mod tests {
                 for index in n..m {
                     buf[index] += Wrapping(v);
                 }
-                tree.modify(n, m, Wrapping(v));
+                tree.modify(n, m, &Wrapping(v));
                 for index in 0..i {
                     assert_eq!(buf[index], tree.query(index));
                 }
             }
-            assert_eq!(&mut buf[..], tree.propogate());
+            assert_eq!(&mut buf[..], tree.propagate());
         }
     }
 }

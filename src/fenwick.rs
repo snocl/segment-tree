@@ -1,6 +1,6 @@
 use std::default::Default;
 
-use maybe_owned::MaybeOwned;
+use maybe_owned::MaybeOwned::{self, Owned, Borrowed};
 use ops::{Commutative, PartialInvert, Invert};
 
 /// This data structure allows prefix queries and single element modification.
@@ -23,54 +23,54 @@ use ops::{Commutative, PartialInvert, Invert};
 /// let mut pp = PrefixPoint::build(buf, Add);
 ///
 /// // If we query, we get the sum up until the specified value.
-/// assert_eq!(pp.query(0), 10);
-/// assert_eq!(pp.query(1), 15);
-/// assert_eq!(pp.query(2), 45);
-/// assert_eq!(pp.query(3), 85);
+/// assert_eq!(10, pp.query(0));
+/// assert_eq!(15, pp.query(1));
+/// assert_eq!(45, pp.query(2));
+/// assert_eq!(85, pp.query(3));
 ///
 /// // Add five to the second value.
-/// pp.modify(1, 5);
-/// assert_eq!(pp.query(0), 10);
-/// assert_eq!(pp.query(1), 20);
-/// assert_eq!(pp.query(2), 50);
-/// assert_eq!(pp.query(3), 90);
+/// pp.modify(1, &5);
+/// assert_eq!(10, pp.query(0));
+/// assert_eq!(20, pp.query(1));
+/// assert_eq!(50, pp.query(2));
+/// assert_eq!(90, pp.query(3));
 ///
 /// // Multiply every value with 2.
 /// pp.map(|v| *v *= 2);
-/// assert_eq!(pp.query(0), 20);
-/// assert_eq!(pp.query(1), 40);
-/// assert_eq!(pp.query(2), 100);
-/// assert_eq!(pp.query(3), 180);
+/// assert_eq!(20, pp.query(0));
+/// assert_eq!(40, pp.query(1));
+/// assert_eq!(100, pp.query(2));
+/// assert_eq!(180, pp.query(3));
 ///
 /// // Divide with two to undo.
 /// pp.map(|v| *v /= 2);
 /// // Add some more values.
 /// pp.extend(vec![0, 10].into_iter());
-/// assert_eq!(pp.query(0), 10);
-/// assert_eq!(pp.query(1), 20);
-/// assert_eq!(pp.query(2), 50);
-/// assert_eq!(pp.query(3), 90);
-/// assert_eq!(pp.query(4), 90);
-/// assert_eq!(pp.query(5), 100);
+/// assert_eq!(10, pp.query(0));
+/// assert_eq!(20, pp.query(1));
+/// assert_eq!(50, pp.query(2));
+/// assert_eq!(90, pp.query(3));
+/// assert_eq!(90, pp.query(4));
+/// assert_eq!(100, pp.query(5));
 ///
 /// // Get the values.
-/// assert_eq!(pp.get(0), 10);
-/// assert_eq!(pp.get(1), 10);
-/// assert_eq!(pp.get(2), 30);
-/// assert_eq!(pp.get(3), 40);
-/// assert_eq!(pp.get(4), 0);
-/// assert_eq!(pp.get(5), 10);
+/// assert_eq!(10, pp.get(0));
+/// assert_eq!(10, pp.get(1));
+/// assert_eq!(30, pp.get(2));
+/// assert_eq!(40, pp.get(3));
+/// assert_eq!(0, pp.get(4));
+/// assert_eq!(10, pp.get(5));
 ///
 /// // Remove the last value
 /// pp.truncate(5);
-/// assert_eq!(pp.get(0), 10);
-/// assert_eq!(pp.get(1), 10);
-/// assert_eq!(pp.get(2), 30);
-/// assert_eq!(pp.get(3), 40);
-/// assert_eq!(pp.get(4), 0);
+/// assert_eq!(10, pp.get(0));
+/// assert_eq!(10, pp.get(1));
+/// assert_eq!(30, pp.get(2));
+/// assert_eq!(40, pp.get(3));
+/// assert_eq!(0, pp.get(4));
 ///
 /// // Get back the original values.
-/// assert_eq!(pp.into_vec(), vec![10, 10, 30, 40, 0]);
+/// assert_eq!(vec![10, 10, 30, 40, 0], pp.into_vec());
 /// ```
 ///
 /// You can also use other operators:
@@ -83,10 +83,10 @@ use ops::{Commutative, PartialInvert, Invert};
 ///
 /// let mut pp = PrefixPoint::build(buf, Mul);
 ///
-/// assert_eq!(pp.query(0), 10);
-/// assert_eq!(pp.query(1), 50);
-/// assert_eq!(pp.query(2), 1500);
-/// assert_eq!(pp.query(3), 60000);
+/// assert_eq!(10, pp.query(0));
+/// assert_eq!(50, pp.query(1));
+/// assert_eq!(1500, pp.query(2));
+/// assert_eq!(60000, pp.query(3));
 /// ```
 #[derive(Clone, Hash)]
 pub struct PrefixPoint<N, O>
@@ -109,7 +109,7 @@ unsafe fn combine_mut<N, O>(buf: &mut Vec<N>, i: usize, j: usize, op: &O)
 {
     let ptr1 = &mut buf[i] as *mut N;
     let ptr2 = &buf[j] as *const N;
-    op.combine_left_mut(&mut *ptr1, &*ptr2);
+    op.combine_mut(&mut *ptr1, &*ptr2);
 }
 
 /// Could also be done with slice_at_mut, but that's a giant pain
@@ -155,7 +155,7 @@ impl<N, O> PrefixPoint<N, O>
         let mut sum = self.buf[i].clone();
         i -= lsb(1 + i) - 1;
         while i > 0 {
-            sum = self.op.combine_left(sum, &self.buf[i - 1]);
+            self.op.combine_mut(&mut sum, &self.buf[i - 1]);
             i -= lsb(i);
         }
         sum
@@ -165,25 +165,35 @@ impl<N, O> PrefixPoint<N, O>
     /// Uses `O(log(i))` time.
     #[inline]
     pub fn query_noclone(&self, mut i: usize) -> MaybeOwned<N> {
-        let mut sum = MaybeOwned::Borrowed(&self.buf[i]);
+        let mut sum = Borrowed(&self.buf[i]);
+
         i -= lsb(1 + i) - 1;
+
         while i > 0 {
-            sum = MaybeOwned::Owned(match sum {
-                MaybeOwned::Borrowed(ref v) => self.op.combine(v, &self.buf[i - 1]),
-                MaybeOwned::Owned(v) => self.op.combine_left(v, &self.buf[i - 1]),
-            });
+            let right = &self.buf[i - 1];
+
+            let result = match sum {
+                Borrowed(ref left) => self.op.combine(left, right),
+                Owned(mut left) => {
+                    self.op.combine_mut(&mut left, right);
+                    left
+                }
+            };
+            sum = Owned(result);
+
             i -= lsb(i);
         }
+
         sum
     }
 
     /// Combine the value at `i` with `delta`.
     /// Uses `O(log(len))` time.
     #[inline]
-    pub fn modify(&mut self, mut i: usize, delta: N) {
+    pub fn modify(&mut self, mut i: usize, delta: &N) {
         let len = self.len();
         while i < len {
-            self.op.combine_left_mut(&mut self.buf[i], &delta);
+            self.op.combine_mut(&mut self.buf[i], delta);
             i += lsb(i + 1);
         }
     }
@@ -226,7 +236,7 @@ impl<N, O> PrefixPoint<N, O>
         let mut sum = self.buf[i].clone();
         let z = 1 + i - lsb(i + 1);
         while i != z {
-            sum = self.op.invert(sum, &self.buf[i - 1]);
+            self.op.invert_mut(&mut sum, &self.buf[i - 1]);
             i -= lsb(i);
         }
         sum
@@ -270,12 +280,12 @@ impl<N, O> PrefixPoint<N, O>
 {
     /// Change the value at the index to be the specified value.
     /// Uses `O(log(i))` time.
-    pub fn set(&mut self, i: usize, value: N)
+    pub fn set(&mut self, i: usize, mut value: N)
         where N: Clone
     {
         let current = self.get(i);
-        let diff = self.op.invert(value, &current);
-        self.modify(i, diff);
+        self.op.invert_mut(&mut value, &current);
+        self.modify(i, &value);
     }
 }
 
@@ -313,10 +323,12 @@ impl<N, O> Extend<N> for PrefixPoint<N, O>
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use rand::{Rng, thread_rng};
     use std::num::Wrapping;
+
+    use rand::{Rng, thread_rng};
+
     use ops::Add;
+    use super::*;
 
     /// Modifies the given slice such that the n'th element becomes the sum of the first n elements.
     pub fn compute_prefix_sum<N: ::std::ops::Add<Output = N> + Copy>(buf: &mut [N]) {
@@ -344,8 +356,8 @@ mod tests {
             let fenwick = PrefixPoint::build(vec.clone(), Add);
             compute_prefix_sum(&mut vec);
             for i in 0..vec.len() {
-                assert_eq!(vec[i], fenwick.query(i));
-                assert_eq!(&vec[i], fenwick.query_noclone(i).borrow());
+                assert_eq!(fenwick.query(i), vec[i]);
+                assert_eq!(fenwick.query_noclone(i).borrow(), &vec[i]);
             }
         }
     }
@@ -358,12 +370,12 @@ mod tests {
             println!("vec = {:?}", vec);
 
             let mut fenwick = PrefixPoint::build(vec.clone(), Add);
-            assert_eq!(fenwick.clone().into_vec(), vec);
-            assert_eq!(fenwick.clone().to_vec(), vec);
+            assert_eq!(vec, fenwick.clone().into_vec());
+            assert_eq!(vec, fenwick.clone().to_vec());
             compute_prefix_sum(&mut vec);
             fenwick.map(|n| *n = Wrapping(12) * *n);
             for i in 0..vec.len() {
-                assert_eq!(vec[i] * Wrapping(12), fenwick.query(i));
+                assert_eq!(fenwick.query(i), vec[i] * Wrapping(12));
             }
         }
     }
@@ -382,14 +394,14 @@ mod tests {
             for i in 0..diff.len() {
                 let mut ps: Vec<Wrapping<i32>> = vec.clone();
                 compute_prefix_sum(&mut ps);
-                assert_eq!(fenwick.clone().into_vec(), vec);
-                assert_eq!(fenwick.clone().to_vec(), vec);
+                assert_eq!(vec, fenwick.clone().into_vec());
+                assert_eq!(vec, fenwick.clone().to_vec());
                 for j in 0..vec.len() {
                     assert_eq!(ps[j], fenwick.query(j));
                     assert_eq!(vec[j], fenwick.get(j));
                 }
                 vec[i] += diff[i];
-                fenwick.modify(i, diff[i]);
+                fenwick.modify(i, &diff[i]);
             }
         }
     }
@@ -409,8 +421,8 @@ mod tests {
             for i in 0..diff.len() {
                 let mut ps: Vec<Wrapping<i32>> = vec.clone();
                 compute_prefix_sum(&mut ps);
-                assert_eq!(fenwick.clone().into_vec(), vec);
-                assert_eq!(fenwick.clone().to_vec(), vec);
+                assert_eq!(vec, fenwick.clone().into_vec());
+                assert_eq!(vec, fenwick.to_vec());
                 for j in 0..vec.len() {
                     assert_eq!(ps[j], fenwick.query(j));
                     assert_eq!(vec[j], fenwick.get(j));

@@ -2,7 +2,7 @@ use std::fmt::{self, Debug};
 use std::hash::{Hash, Hasher};
 use std::mem;
 
-use maybe_owned::MaybeOwned;
+use maybe_owned::MaybeOwned::{self, Owned, Borrowed};
 use ops::{Operation, Commutative, Identity};
 
 /// This data structure allows range queries and single element modification.
@@ -26,33 +26,31 @@ use ops::{Operation, Commutative, Identity};
 /// ); //     0  1  2  3   4  5  6  7  8  9 10  - indices
 ///
 /// // find the minimum value in a few intervals
-/// assert_eq!(tree.query(0, 2), Some(5));
-/// assert_eq!(tree.query(4, 8), Some(3));
-/// assert_eq!(tree.query(3, 11), Some(1));
-/// assert_eq!(tree.query(0, 11), Some(1));
+/// assert_eq!(Some(5), tree.query(0, 2));
+/// assert_eq!(Some(3), tree.query(4, 8));
+/// assert_eq!(Some(1), tree.query(3, 11));
+/// assert_eq!(Some(1), tree.query(0, 11));
 ///
 /// // query returns None if given an invalid interval
-/// assert_eq!(tree.query(4, 2), None);
+/// assert_eq!(None, tree.query(4, 2));
 ///
 /// // if we want to avoid cloning, we can use query_noclone:
 /// use segment_tree::maybe_owned::MaybeOwned;
-/// assert_eq!(tree.query_noclone(4, 9), Some(MaybeOwned::Owned(2)));
-/// // note that the Eq implementation of MaybeOwned considers Owned and Borrowed equal if
-/// // their contents are equal
+/// assert_eq!(Some(MaybeOwned::Owned(2)), tree.query_noclone(4, 9));
 ///
 /// // since minimum is commutative, we can use query_commut
-/// assert_eq!(tree.query_commut(3, 11), 1);
+/// assert_eq!(1, tree.query_commut(3, 11));
 ///
 /// // let's update a few values
 /// tree.modify(1, 3);
-/// assert_eq!(tree.query_commut(0, 2), 3);
-/// assert_eq!(tree.query_commut(5, 8), 3);
+/// assert_eq!(3, tree.query_commut(0, 2));
+/// assert_eq!(3, tree.query_commut(5, 8));
 ///
 /// tree.modify(3, 0);
-/// assert_eq!(tree.query_commut(2, 8), 0);
+/// assert_eq!(0, tree.query_commut(2, 8));
 ///
 /// // we can view the values currently stored at any time
-/// assert_eq!(tree.view(), &[10, 3, 6, 0, 12, 8, 9, 3, 2, 1, 5]);
+/// assert_eq!(&[10, 3, 6, 0, 12, 8, 9, 3, 2, 1, 5], tree.view());
 /// ```
 ///
 /// We can also use a `SegmentPoint` to find the sum of any interval, by changing the operator to
@@ -67,18 +65,18 @@ use ops::{Operation, Commutative, Identity};
 ///    vec![10, 5, 6, 4, 12, 8, 9, 3, 2, 1, 5], Add
 /// ); //     0  1  2  3   4  5  6  7  8  9 10  - indices
 ///
-/// assert_eq!(tree.query_commut(4, 8), 12 + 8 + 9 + 3);
-/// assert_eq!(tree.query_commut(1, 3), 5 + 6);
+/// assert_eq!(12 + 8 + 9 + 3, tree.query_commut(4, 8));
+/// assert_eq!(5 + 6, tree.query_commut(1, 3));
 ///
 /// // query_commut returns the identity if given an invalid interval
-/// assert_eq!(tree.query_commut(3, 1), 0);
+/// assert_eq!(0, tree.query_commut(3, 1));
 ///
 /// // we can still modify values in the tree
 /// tree.modify(2, 4);
-/// assert_eq!(tree.query_commut(1, 3), 5 + 4);
-/// assert_eq!(tree.query_commut(4, 8), 12 + 8 + 9 + 3);
+/// assert_eq!(5 + 4, tree.query_commut(1, 3));
+/// assert_eq!(12 + 8 + 9 + 3, tree.query_commut(4, 8));
 ///
-/// assert_eq!(tree.view(), &[10, 5, 4, 4, 12, 8, 9, 3, 2, 1, 5]);
+/// assert_eq!(&[10, 5, 4, 4, 12, 8, 9, 3, 2, 1, 5], tree.view());
 /// ```
 ///
 /// [1]: https://en.wikipedia.org/wiki/Range_minimum_query
@@ -130,29 +128,34 @@ impl<N, O: Operation<N>> SegmentPoint<N, O> {
         r += self.n;
         while l < r {
             if l & 1 == 1 {
-                resl = match resl {
-                    None => Some(self.buf[l].clone()),
-                    Some(v) => Some(self.op.combine_left(v, &self.buf[l])),
-                };
+                resl = Some(match resl {
+                    None => self.buf[l].clone(),
+                    Some(mut left) => {
+                        self.op.combine_mut(&mut left, &self.buf[l]);
+                        left
+                    }
+                });
                 l += 1;
             }
             if r & 1 == 1 {
                 r -= 1;
-                resr = match resr {
-                    None => Some(self.buf[r].clone()),
-                    Some(v) => Some(self.op.combine_right(&self.buf[r], v)),
-                }
+                resr = Some(match resr {
+                    None => self.buf[r].clone(),
+                    Some(mut right) => {
+                        self.op.combine_mut_right(&self.buf[r], &mut right);
+                        right
+                    }
+                });
             }
             l >>= 1;
             r >>= 1;
         }
-        match resl {
-            None => resr,
-            Some(l) => {
-                match resr {
-                    None => Some(l),
-                    Some(r) => Some(self.op.combine_both(l, r)),
-                }
+
+        match (resl, resr) {
+            (None, result) | (result, None) => result,
+            (Some(mut left), Some(right)) => {
+                self.op.combine_mut(&mut left, &right);
+                Some(left)
             }
         }
     }
@@ -173,55 +176,54 @@ impl<N, O: Operation<N>> SegmentPoint<N, O> {
         r += self.n;
         while l < r {
             if l & 1 == 1 {
-                resl = match resl {
-                    None => Some(MaybeOwned::Borrowed(&self.buf[l])),
-                    Some(MaybeOwned::Borrowed(ref v)) => {
-                        Some(MaybeOwned::Owned(self.op.combine(v, &self.buf[l])))
+                let right = &self.buf[l];
+                resl = Some(match resl {
+                    None => Borrowed(right),
+                    Some(Borrowed(left)) => Owned(self.op.combine(left, right)),
+                    Some(Owned(mut left)) => {
+                        self.op.combine_mut(&mut left, right);
+                        Owned(left)
                     }
-                    Some(MaybeOwned::Owned(v)) => {
-                        Some(MaybeOwned::Owned(self.op.combine_left(v, &self.buf[l])))
-                    }
-                };
+                });
                 l += 1;
             }
             if r & 1 == 1 {
                 r -= 1;
-                resr = match resr {
-                    None => Some(MaybeOwned::Borrowed(&self.buf[r])),
-                    Some(MaybeOwned::Borrowed(ref v)) => {
-                        Some(MaybeOwned::Owned(self.op.combine(&self.buf[r], v)))
+                let left = &self.buf[r];
+                resr = Some(match resr {
+                    None => Borrowed(left),
+                    Some(Borrowed(ref right)) => Owned(self.op.combine(left, right)),
+                    Some(Owned(mut right)) => {
+                        self.op.combine_mut_right(left, &mut right);
+                        Owned(right)
                     }
-                    Some(MaybeOwned::Owned(v)) => {
-                        Some(MaybeOwned::Owned(self.op.combine_right(&self.buf[r], v)))
-                    }
-                }
+                });
             }
             l >>= 1;
             r >>= 1;
         }
+
         match resl {
             None => resr,
-            Some(MaybeOwned::Borrowed(ref l)) => {
-                match resr {
-                    None => Some(MaybeOwned::Borrowed(l)),
-                    Some(MaybeOwned::Borrowed(ref r)) => {
-                        Some(MaybeOwned::Owned(self.op.combine(l, r)))
-                    }
-                    Some(MaybeOwned::Owned(r)) => {
-                        Some(MaybeOwned::Owned(self.op.combine_right(l, r)))
-                    }
+            Some(Owned(mut left)) => {
+                if let Some(ref right) = resr {
+                    self.op.combine_mut(&mut left, right.borrow());
                 }
+                Some(Owned(left))
             }
-            Some(MaybeOwned::Owned(l)) => {
-                match resr {
-                    None => Some(MaybeOwned::Owned(l)),
-                    Some(MaybeOwned::Borrowed(ref r)) => {
-                        Some(MaybeOwned::Owned(self.op.combine_left(l, r)))
+            Some(Borrowed(left)) => {
+                let right = match resr {
+                    Some(right) => right,
+                    None => return Some(Borrowed(left)),
+                };
+
+                Some(Owned(match right {
+                    Borrowed(right) => self.op.combine(left, right),
+                    Owned(mut right) => {
+                        self.op.combine_mut_right(left, &mut right);
+                        right
                     }
-                    Some(MaybeOwned::Owned(r)) => {
-                        Some(MaybeOwned::Owned(self.op.combine_both(l, r)))
-                    }
-                }
+                }))
             }
         }
     }
@@ -229,13 +231,17 @@ impl<N, O: Operation<N>> SegmentPoint<N, O> {
     /// Set the value at the specified index and return the old value.
     /// Uses `O(log(len))` time.
     pub fn modify(&mut self, mut p: usize, value: N) -> N {
+        // TODO: Is it possible to take value by ref?
+
         p += self.n;
         let res = mem::replace(&mut self.buf[p], value);
-        while {
+
+        while p > 1 {
+            let lp = p & !1;
+            let rp = p | 1;
             p >>= 1;
-            p > 0
-        } {
-            self.buf[p] = self.op.combine(&self.buf[p << 1], &self.buf[p << 1 | 1]);
+
+            self.buf[p] = self.op.combine(&self.buf[lp], &self.buf[rp]);
         }
         res
     }
@@ -244,12 +250,14 @@ impl<N, O: Operation<N>> SegmentPoint<N, O> {
     /// Uses `O(log(len))` time.
     pub fn compose_left(&mut self, mut p: usize, delta: &N) {
         p += self.n;
-        self.op.combine_right_mut(delta, &mut self.buf[p]);
-        while {
+        self.op.combine_mut_right(delta, &mut self.buf[p]);
+
+        while p > 1 {
+            let lp = p & !1;
+            let rp = p | 1;
             p >>= 1;
-            p > 0
-        } {
-            self.buf[p] = self.op.combine(&self.buf[p << 1], &self.buf[p << 1 | 1]);
+
+            self.buf[p] = self.op.combine(&self.buf[lp], &self.buf[rp]);
         }
     }
 
@@ -257,12 +265,14 @@ impl<N, O: Operation<N>> SegmentPoint<N, O> {
     /// Uses `O(log(len))` time.
     pub fn compose_right(&mut self, mut p: usize, delta: &N) {
         p += self.n;
-        self.op.combine_left_mut(&mut self.buf[p], delta);
-        while {
+        self.op.combine_mut(&mut self.buf[p], delta);
+
+        while p > 1 {
+            let lp = p & !1;
+            let rp = p | 1;
             p >>= 1;
-            p > 0
-        } {
-            self.buf[p] = self.op.combine(&self.buf[p << 1], &self.buf[p << 1 | 1]);
+
+            self.buf[p] = self.op.combine(&self.buf[lp], &self.buf[rp]);
         }
     }
 
@@ -352,12 +362,12 @@ impl<N, O: Commutative<N> + Identity<N>> SegmentPoint<N, O> {
         r += self.n;
         while l < r {
             if l & 1 == 1 {
-                res = self.op.combine_left(res, &self.buf[l]);
+                self.op.combine_mut(&mut res, &self.buf[l]);
                 l += 1;
             }
             if r & 1 == 1 {
                 r -= 1;
-                res = self.op.combine_left(res, &self.buf[r]);
+                self.op.combine_mut(&mut res, &self.buf[r]);
             }
             l >>= 1;
             r >>= 1;
@@ -422,11 +432,15 @@ impl<N: Hash, O: Operation<N> + Hash> Hash for SegmentPoint<N, O> {
 
 #[cfg(test)]
 mod tests {
-    use SegmentPoint;
-    use ops::*;
-    use maybe_owned::MaybeOwned;
-    use rand::{Rand, Rng, thread_rng};
     use std::num::Wrapping;
+
+    use rand::{Rand, Rng, thread_rng};
+
+    use maybe_owned::MaybeOwned;
+    use ops::*;
+    use super::*;
+
+    // TODO: Remove these particularly unhelpful uses of random data in tests.
 
     /// Not commutative! Not useful in practice since the root always contains the concatenation of
     /// every string.
@@ -456,10 +470,12 @@ mod tests {
 
     impl Operation<StrType> for Add {
         fn combine(&self, a: &StrType, b: &StrType) -> StrType {
-            StrType { value: a.value.clone() + b.value.as_str() }
+            let mut a = a.clone();
+            self.combine_mut(&mut a, b);
+            a
         }
 
-        fn combine_left_mut(&self, a: &mut StrType, b: &StrType) {
+        fn combine_mut(&self, a: &mut StrType, b: &StrType) {
             a.value.push_str(b.value.as_str());
         }
     }
@@ -468,6 +484,9 @@ mod tests {
     fn segment_tree_build() {
         let mut rng = thread_rng();
         let vals: Vec<_> = rng.gen_iter::<i32>().map(|i| Wrapping(i)).take(130).collect();
+
+        println!("vals = {:?}", vals);
+
         for i in 0..vals.len() {
             let buf: Vec<_> = vals[0..i].iter().cloned().collect();
             println!("{:?}", buf);
@@ -490,7 +509,7 @@ mod tests {
             println!("build_noalloc");
             println!("{:?}", buf2);
             assert_eq!(buf, buf2);
-            assert_eq!(buf.len(), 2 * n);
+            assert_eq!(2 * n, buf.len());
         }
     }
 
@@ -498,6 +517,9 @@ mod tests {
     fn segment_tree_query() {
         let mut rng = thread_rng();
         let vals: Vec<StrType> = rng.gen_iter().take(130).collect();
+
+        println!("vals = {:?}", vals);
+
         for i in 0..vals.len() {
             let buf: Vec<_> = vals[0..i].iter().cloned().collect();
             let tree = SegmentPoint::build(buf.clone(), Add);
@@ -505,12 +527,12 @@ mod tests {
             let n = buf.len();
             println!("n: {} tree.buf.len: {}", n, tree.buf.len());
             for i in 0..n {
-                assert_eq!(tree.query(i, i), None);
+                assert_eq!(None, tree.query(i, i));
                 for j in i + 1..n + 1 {
                     println!("i: {}, j: {}", i, j);
-                    assert_eq!(tree.query(i, j), Some(sum.sub(i, j)));
-                    assert_eq!(tree.query_noclone(i, j),
-                               Some(MaybeOwned::Owned(sum.sub(i, j))));
+                    assert_eq!(Some(sum.sub(i, j)), tree.query(i, j));
+                    assert_eq!(Some(MaybeOwned::Owned(sum.sub(i, j))),
+                               tree.query_noclone(i, j));
                 }
             }
         }
@@ -520,23 +542,26 @@ mod tests {
     fn segment_tree_query_commut() {
         let mut rng = thread_rng();
         let vals: Vec<Wrapping<i32>> = rng.gen_iter().map(|i| Wrapping(i)).take(130).collect();
+
+        println!("vals = {:?}", vals);
+
         for i in 0..vals.len() {
             let mut buf: Vec<_> = vals[0..i].iter().cloned().collect();
             let tree = SegmentPoint::build(buf.clone(), Add);
-            assert_eq!(tree.view(), &buf[..]);
+            assert_eq!(&buf[..], tree.view());
             for i in 1..buf.len() {
                 buf[i] += buf[i - 1];
             } // compute the prefix sum
             let n = buf.len();
             println!("n: {} tree.buf.len: {}", n, tree.buf.len());
             for i in 0..n {
-                assert_eq!(tree.query(i, i), None);
+                assert_eq!(None, tree.query(i, i));
                 for j in i + 1..n + 1 {
                     println!("i: {}, j: {}", i, j);
                     if i == 0 {
-                        assert_eq!(tree.query_commut(i, j), buf[j - 1]);
+                        assert_eq!(buf[j - 1], tree.query_commut(i, j));
                     } else {
-                        assert_eq!(tree.query_commut(i, j), buf[j - 1] - buf[i - 1]);
+                        assert_eq!(buf[j - 1] - buf[i - 1], tree.query_commut(i, j));
                     }
                 }
             }
@@ -550,9 +575,16 @@ mod tests {
             rng.gen_iter::<i32>().map(|i| Wrapping(i)).take(130).collect();
         let vals2: Vec<Wrapping<i32>> =
             rng.gen_iter::<i32>().map(|i| Wrapping(i)).take(130).collect();
+
+        println!("vals1 = {:?}", vals1);
+        println!("vals2 = {:?}", vals2);
+
         for i in 0..vals1.len() {
             let mut order: Vec<_> = (0..i).collect();
             rng.shuffle(&mut order[..]);
+
+            println!("order = {:?}", order);
+
             let mut buf: Vec<_> = vals1[0..i].iter().cloned().collect();
             let mut tree = SegmentPoint::build(buf.clone(), Add);
             for next in order {
