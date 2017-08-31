@@ -6,21 +6,21 @@ use std::ops::{Add as OpAdd, Sub, Mul as OpMul, Div};
 use num::{BigInt, BigUint, Complex, Zero, One, Signed, Integer};
 use num::rational::Ratio;
 
-use ops::{Operation, Commutative, Identity, PartialInvert, Invert, IsNonzero, Nonzero, Add, Mul};
+use ops::{Operation, Commutative, Identity, PartialInvert, Invert, IsZero, Nonzero, Add, Mul};
 
 use std::mem;
 
-impl IsNonzero for BigInt {
+impl IsZero for BigInt {
     #[inline]
-    fn is_nonzero(&self) -> bool {
-        !self.is_zero()
+    fn is_zero(&self) -> bool {
+        Zero::is_zero(self)
     }
 }
 
-impl IsNonzero for BigUint {
+impl IsZero for BigUint {
     #[inline]
-    fn is_nonzero(&self) -> bool {
-        !self.is_zero()
+    fn is_zero(&self) -> bool {
+        Zero::is_zero(self)
     }
 }
 
@@ -275,12 +275,12 @@ macro_rules! impl_ratio_op {
     };
 }
 
-impl<N> IsNonzero for Ratio<N>
+impl<N> IsZero for Ratio<N>
     where N: Clone + Integer
 {
     #[inline]
-    fn is_nonzero(&self) -> bool {
-        !self.is_zero()
+    fn is_zero(&self) -> bool {
+        Zero::is_zero(self)
     }
 }
 

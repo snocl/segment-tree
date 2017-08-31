@@ -60,9 +60,9 @@ pub trait Operation<N> {
     }
 }
 
-/// A marker trait that specifies that an [`Operation`] is commutative, that is: `combine(a, b) = combine(b, a)`.
+/// A marker trait that specifies that an operation is commutative.
 ///
-/// [`Operation`]: trait.Operation.html
+/// The implementation must ensure that `combine(a, b) = combine(b, a)` holds.
 pub trait Commutative<N>: Operation<N> {}
 
 /// A trait that specifies that this operation has an identity.
@@ -209,63 +209,68 @@ impl_op_deref!(O, Box<O>);
 impl_op_deref!(O, Rc<O>);
 impl_op_deref!(O, Arc<O>);
 
-pub trait IsNonzero {
-    fn is_nonzero(&self) -> bool;
+pub trait IsZero {
+    fn is_zero(&self) -> bool;
 }
 
-macro_rules! impl_is_nonzero {
+macro_rules! impl_is_zero {
     ($N:ty) => {
-        impl IsNonzero for $N {
+        impl IsZero for $N {
             #[inline]
-            fn is_nonzero(&self) -> bool {
-                *self != 0
+            fn is_zero(&self) -> bool {
+                *self == 0
             }
         }
     };
 }
 
-impl_is_nonzero!(u8);
-impl_is_nonzero!(u16);
-impl_is_nonzero!(u32);
-impl_is_nonzero!(u64);
-impl_is_nonzero!(i8);
-impl_is_nonzero!(i16);
-impl_is_nonzero!(i32);
-impl_is_nonzero!(i64);
-impl_is_nonzero!(usize);
-impl_is_nonzero!(isize);
+impl_is_zero!(u8);
+impl_is_zero!(u16);
+impl_is_zero!(u32);
+impl_is_zero!(u64);
+impl_is_zero!(i8);
+impl_is_zero!(i16);
+impl_is_zero!(i32);
+impl_is_zero!(i64);
+impl_is_zero!(usize);
+impl_is_zero!(isize);
+
+macro_rules! impl_wrapper {
+    ($T:ident) => {
+        impl<N> $T<N> {
+            #[inline]
+            pub fn new_unchecked(value: N) -> $T<N> {
+                $T(value)
+            }
+
+            #[inline]
+            pub fn into_inner(self) -> N {
+                self.0
+            }
+        }
+
+        impl<N> AsRef<N> for $T<N> {
+            fn as_ref(&self) -> &N {
+                &self.0
+            }
+        }
+    };
+}
 
 #[derive(Clone, Copy, Eq, PartialEq, Debug, Hash, PartialOrd, Ord)]
 pub struct Nonzero<N>(N);
 
 impl<N> Nonzero<N>
-    where N: IsNonzero
+    where N: IsZero
 {
     #[inline]
     pub fn new(value: N) -> Nonzero<N> {
-        assert!(value.is_nonzero());
+        assert!(!value.is_zero());
         Nonzero(value)
     }
 }
 
-impl<N> Nonzero<N> {
-    #[inline]
-    pub fn new_unchecked(value: N) -> Nonzero<N> {
-        Nonzero(value)
-    }
-
-    #[inline]
-    pub fn into_inner(self) -> N {
-        self.0
-    }
-}
-
-impl<N> AsRef<N> for Nonzero<N> {
-    #[inline]
-    fn as_ref(&self) -> &N {
-        &self.0
-    }
-}
+impl_wrapper!(Nonzero);
 
 /// Each node contains the sum of the interval it represents.
 #[derive(Clone, Copy, Eq, PartialEq, Debug, Default, Hash)]
@@ -373,6 +378,14 @@ macro_rules! impl_primitive_op_partial_inv_deref {
     };
 }
 
+macro_rules! impl_primitive_op_inv_deref {
+    ($O:ty, $N:ty, $init:expr, $op:ident, $inv:ident, $identity:expr) => {
+        impl_primitive_op_partial_inv_deref!($O, $N, $init, $op, $inv, $identity);
+
+        impl Invert<$N> for $O {}
+    };
+}
+
 macro_rules! impl_primitive_op_checked {
     ($O:ty, $N:ty, $op:ident, $identity:expr) => {
         impl Operation<Option<$N>> for $O {
@@ -401,7 +414,8 @@ macro_rules! impl_primitive_int {
         impl_primitive_op_inv!(WrappingAdd, $N, wrapping_add, wrapping_sub, 0);
         impl_primitive_op!(SaturatingAdd, $N, saturating_add, 0);
         impl_primitive_op!(Mul, $N, mul, 1);
-        impl_primitive_op_partial_inv_deref!(Mul, Nonzero<$N>, Nonzero::new, mul, div, Nonzero::new_unchecked(1));
+        impl_primitive_op_partial_inv_deref!(Mul, Nonzero<$N>, Nonzero::new, mul, div,
+                                             Nonzero::new_unchecked(1));
         impl_primitive_op!(WrappingMul, $N, wrapping_mul, 0);
         impl_primitive_op!(SaturatingMul, $N, saturating_mul, 1);
 
@@ -433,19 +447,6 @@ macro_rules! impl_primitive_signed_int {
     };
 }
 
-macro_rules! impl_primitive_float {
-    ($N:ty) => {
-        impl_primitive_op!(Add, $N, add, 0.0);
-        impl_primitive_op!(Mul, $N, mul, 1.0);
-
-        // Add is not PartialInvert<fN> because addition by an infinite or NaN
-        // value isn't reversible.
-
-        // Mul is not PratialInvert<fN> because multiplication by zero, an infinite
-        // value or an NaN value isn't reversible.
-    };
-}
-
 impl_primitive_unsigned_int!(u8);
 impl_primitive_unsigned_int!(u16);
 impl_primitive_unsigned_int!(u32);
@@ -456,6 +457,93 @@ impl_primitive_signed_int!(i32);
 impl_primitive_signed_int!(i64);
 impl_primitive_unsigned_int!(usize);
 impl_primitive_signed_int!(isize);
+
+pub trait IsNan {
+    fn is_nan(&self) -> bool;
+}
+
+pub trait IsFinite {
+    fn is_finite(&self) -> bool;
+}
+
+#[derive(Clone, Copy, Eq, PartialEq, Debug, Default, Hash, PartialOrd, Ord)]
+pub struct NotNan<N>(N);
+
+impl<N> NotNan<N>
+    where N: IsNan
+{
+    #[inline]
+    pub fn new(value: N) -> NotNan<N> {
+        assert!(!value.is_nan());
+        NotNan(value)
+    }
+}
+
+impl_wrapper!(NotNan);
+
+#[derive(Clone, Copy, Eq, PartialEq, Debug, Default, Hash, PartialOrd, Ord)]
+pub struct Finite<N>(N);
+
+impl<N> Finite<N>
+    where N: IsFinite
+{
+    #[inline]
+    pub fn new(value: N) -> Finite<N> {
+        assert!(value.is_finite());
+        Finite(value)
+    }
+}
+
+impl_wrapper!(Finite);
+
+#[derive(Clone, Copy, Eq, PartialEq, Debug, Hash, PartialOrd, Ord)]
+pub struct FiniteNonzero<N>(N);
+
+impl<N> FiniteNonzero<N>
+    where N: IsFinite + IsZero
+{
+    #[inline]
+    pub fn new(value: N) -> FiniteNonzero<N> {
+        assert!(value.is_finite());
+        assert!(!value.is_zero());
+        FiniteNonzero(value)
+    }
+}
+
+impl_wrapper!(FiniteNonzero);
+
+macro_rules! impl_primitive_float {
+    ($N:ty) => {
+        impl IsNan for $N {
+            #[inline]
+            fn is_nan(&self) -> bool {
+                (*self).is_nan()
+            }
+        }
+
+        impl IsFinite for $N {
+            #[inline]
+            fn is_finite(&self) -> bool {
+                (*self).is_finite()
+            }
+        }
+
+        impl IsZero for $N {
+            #[inline]
+            fn is_zero(&self) -> bool {
+                *self == 0.0
+            }
+        }
+
+        impl_primitive_op!(Add, $N, add, 0.0);
+        impl_primitive_op!(Mul, $N, mul, 1.0);
+
+        impl_primitive_op_inv_deref!(Add, Finite<$N>, Finite::new, add, sub,
+                                     Finite::new_unchecked(0.0));
+        impl_primitive_op_inv_deref!(Mul, FiniteNonzero<$N>, FiniteNonzero::new, mul, div,
+                                     FiniteNonzero::new_unchecked(1.0));
+    };
+}
 
 impl_primitive_float!(f32);
 impl_primitive_float!(f64);
@@ -485,7 +573,7 @@ macro_rules! impl_primitive_op_cmp {
                 $identity
             }
         }
-    }
+    };
 }
 
 macro_rules! impl_primitive_cmp_int {
@@ -550,8 +638,31 @@ macro_rules! impl_primitive_op_cmp_nan {
     };
 }
 
+macro_rules! impl_primitive_op_cmp_deref {
+    ($O:ty, $N:ty, $cmp:tt, $identity:expr) => {
+        impl Operation<$N> for $O {
+            #[inline]
+            fn combine(&self, left: &$N, right: &$N) -> $N {
+                if left.as_ref().$cmp(right.as_ref()) { *left } else { *right }
+            }
+        }
+
+        impl Commutative<$N> for $O {}
+
+        impl Identity<$N> for $O {
+            #[inline]
+            fn identity(&self) -> $N {
+                $identity
+            }
+        }
+    };
+}
+
 macro_rules! impl_primitive_cmp_float {
     ($N:tt) => {
+        impl_primitive_op_cmp_deref!(Max, NotNan<$N>, gt, NotNan::new_unchecked($N::NEG_INFINITY));
+        impl_primitive_op_cmp_deref!(Min, NotNan<$N>, lt, NotNan::new_unchecked($N::INFINITY));
+
         impl_primitive_op_cmp_nan!(MaxIgnoreNan, $N, gt, false, $N::NEG_INFINITY);
         impl_primitive_op_cmp_nan!(MaxTakeNan, $N, gt, true, $N::NEG_INFINITY);
         impl_primitive_op_cmp_nan!(MinIgnoreNan, $N, lt, false, $N::INFINITY);

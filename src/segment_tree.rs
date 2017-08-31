@@ -340,7 +340,8 @@ impl<N, O: Commutative<N> + Identity<N>> SegmentPoint<N, O> {
     ///
     /// If `l >= r`, this method returns the identity.
     ///
-    /// See [`query`] or [`query_noclone`] for a version that works with non-[commutative operations][1].
+    /// See [`query`] or [`query_noclone`] for a version that works with
+    /// non-[commutative operations][1].
     ///
     /// [`query`]: struct.SegmentPoint.html#method.query
     /// [`query_noclone`]: struct.SegmentPoint.html#method.query_noclone
