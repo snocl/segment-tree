@@ -16,6 +16,7 @@
 //! [`PartialInvert`]: trait.PartialInvert.html
 //! [`Invert`]: trait.Invert.html
 
+use std::cmp::{self, Ordering};
 use std::num::Wrapping;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -101,9 +102,14 @@ pub trait IsZero {
 }
 
 /// A trait for values that can be NaN.
+///
+/// All other values of `self` must be `Eq` and `Ord`.
 pub trait IsNan {
     /// Returns true if `self` is a NaN value.
     fn is_nan(&self) -> bool;
+
+    /// Returns any NaN value.
+    fn nan() -> Self;
 }
 
 /// A trait for values that can be finite, but isn't always.
@@ -163,8 +169,9 @@ impl_wrapper!(Nonzero);
 
 /// Wrapper that ensures a value isn't NaN.
 ///
-/// This can be used for operations that aren't invertible for NaN values.
-#[derive(Clone, Copy, Eq, PartialEq, Debug, Default, Hash, PartialOrd, Ord)]
+/// This means `NotNan<f32>` and `NotNan<f64>` implement `Eq` and `Ord`
+/// unlike the primitive types.
+#[derive(Clone, Copy, PartialEq, Debug, Default, Hash, PartialOrd)]
 pub struct NotNan<N>(N);
 
 impl<N> NotNan<N>
@@ -183,6 +190,17 @@ impl<N> NotNan<N>
 }
 
 impl_wrapper!(NotNan);
+
+impl<N> Eq for NotNan<N> where N: PartialEq {}
+
+impl<N> Ord for NotNan<N>
+    where N: PartialOrd
+{
+    #[inline]
+    fn cmp(&self, other: &NotNan<N>) -> Ordering {
+        self.partial_cmp(other).unwrap()
+    }
+}
 
 /// Wrapper that ensures a value is finite.
 ///
@@ -280,10 +298,18 @@ pub struct And;
 pub struct Or;
 
 /// The result is the maximum value.
+///
+/// This operation is implemented through [`Ord`].
+///
+/// [`Ord`]: https://doc.rust-lang.org/std/cmp/trait.Ord.html
 #[derive(Clone, Copy, Eq, PartialEq, Debug, Default, Hash)]
 pub struct Max;
 
 /// The result is the minimum value.
+///
+/// This operation is implemented through [`Ord`].
+///
+/// [`Ord`]: https://doc.rust-lang.org/std/cmp/trait.Ord.html
 #[derive(Clone, Copy, Eq, PartialEq, Debug, Default, Hash)]
 pub struct Min;
 
@@ -566,5 +592,226 @@ impl<N, O> PartialInvert<Option<N>> for WithIdentity<O>
         }
 
         panic!("empty result with nonempty argument");
+    }
+}
+
+impl<N> Operation<N> for Max
+    where N: Ord + Clone
+{
+    #[inline]
+    fn combine(&self, left: &N, right: &N) -> N {
+        cmp::max(left, right).clone()
+    }
+
+    #[inline]
+    fn combine_mut(&self, left: &mut N, right: &N) {
+        if *left < *right {
+            *left = right.clone();
+        }
+    }
+
+    #[inline]
+    fn combine_mut_right(&self, left: &N, right: &mut N) {
+        if *right < *left {
+            *right = left.clone();
+        }
+    }
+}
+
+impl<N> Commutative<N> for Max where N: Ord + Clone {}
+
+impl<N> Operation<N> for Min
+    where N: Ord + Clone
+{
+    #[inline]
+    fn combine(&self, left: &N, right: &N) -> N {
+        cmp::min(left, right).clone()
+    }
+
+    #[inline]
+    fn combine_mut(&self, left: &mut N, right: &N) {
+        if *left > *right {
+            *left = right.clone();
+        }
+    }
+
+    #[inline]
+    fn combine_mut_right(&self, left: &N, right: &mut N) {
+        if *right > *left {
+            *right = left.clone();
+        }
+    }
+}
+
+impl<N> Commutative<N> for Min where N: Ord + Clone {}
+
+impl<N> Operation<N> for MaxIgnoreNan
+    where N: PartialOrd + IsNan + Clone
+{
+    #[inline]
+    fn combine(&self, left: &N, right: &N) -> N {
+        if !right.is_nan() && (left.is_nan() || *left < *right) {
+            right.clone()
+        } else {
+            left.clone()
+        }
+    }
+
+    #[inline]
+    fn combine_mut(&self, left: &mut N, right: &N) {
+        if !right.is_nan() && (left.is_nan() || *left < *right) {
+            *left = right.clone();
+        }
+    }
+
+    #[inline]
+    fn combine_mut_right(&self, left: &N, right: &mut N) {
+        if !left.is_nan() && (right.is_nan() || *right < *left) {
+            *right = left.clone();
+        }
+    }
+}
+
+impl<N> Commutative<N> for MaxIgnoreNan
+    where N: PartialOrd + IsNan + Clone
+{
+    // Marker trait.
+}
+
+impl<N> Identity<N> for MaxIgnoreNan
+    where N: PartialOrd + IsNan + Clone
+{
+    #[inline]
+    fn identity(&self) -> N {
+        IsNan::nan()
+    }
+}
+
+impl<N> Operation<N> for MinIgnoreNan
+    where N: PartialOrd + IsNan + Clone
+{
+    #[inline]
+    fn combine(&self, left: &N, right: &N) -> N {
+        if !right.is_nan() && (left.is_nan() || *left > *right) {
+            right.clone()
+        } else {
+            left.clone()
+        }
+    }
+
+    #[inline]
+    fn combine_mut(&self, left: &mut N, right: &N) {
+        if !right.is_nan() && (left.is_nan() || *left > *right) {
+            *left = right.clone();
+        }
+    }
+
+    #[inline]
+    fn combine_mut_right(&self, left: &N, right: &mut N) {
+        if !left.is_nan() && (right.is_nan() || *right > *left) {
+            *right = left.clone();
+        }
+    }
+}
+
+impl<N> Commutative<N> for MinIgnoreNan
+    where N: PartialOrd + IsNan + Clone
+{
+    // Marker trait.
+}
+
+impl<N> Identity<N> for MinIgnoreNan
+    where N: PartialOrd + IsNan + Clone
+{
+    #[inline]
+    fn identity(&self) -> N {
+        IsNan::nan()
+    }
+}
+
+
+impl<N> Operation<N> for MaxTakeNan
+    where N: PartialOrd + IsNan + Clone
+{
+    #[inline]
+    fn combine(&self, left: &N, right: &N) -> N {
+        if !left.is_nan() && (right.is_nan() || *left < *right) {
+            right.clone()
+        } else {
+            left.clone()
+        }
+    }
+
+    #[inline]
+    fn combine_mut(&self, left: &mut N, right: &N) {
+        if !left.is_nan() && (right.is_nan() || *left < *right) {
+            *left = right.clone();
+        }
+    }
+
+    #[inline]
+    fn combine_mut_right(&self, left: &N, right: &mut N) {
+        if !right.is_nan() && (left.is_nan() || *right < *left) {
+            *right = left.clone();
+        }
+    }
+}
+
+impl<N> Commutative<N> for MaxTakeNan
+    where N: PartialOrd + IsNan + Clone
+{
+    // Marker trait.
+}
+
+impl<N> Identity<N> for MaxTakeNan
+    where N: PartialOrd + IsNan + Clone,
+          Max: Identity<NotNan<N>>
+{
+    #[inline]
+    fn identity(&self) -> N {
+        Max.identity().into_inner()
+    }
+}
+
+impl<N> Operation<N> for MinTakeNan
+    where N: PartialOrd + IsNan + Clone
+{
+    #[inline]
+    fn combine(&self, left: &N, right: &N) -> N {
+        if !left.is_nan() && (right.is_nan() || *left > *right) {
+            right.clone()
+        } else {
+            left.clone()
+        }
+    }
+
+    #[inline]
+    fn combine_mut(&self, left: &mut N, right: &N) {
+        if !left.is_nan() && (right.is_nan() || *left > *right) {
+            *left = right.clone();
+        }
+    }
+
+    #[inline]
+    fn combine_mut_right(&self, left: &N, right: &mut N) {
+        if !right.is_nan() && (left.is_nan() || *right > *left) {
+            *right = left.clone();
+        }
+    }
+}
+
+impl<N> Commutative<N> for MinTakeNan
+    where N: PartialOrd + IsNan + Clone
+{
+    // Marker trait.
+}
+
+impl<N> Identity<N> for MinTakeNan
+    where N: PartialOrd + IsNan + Clone,
+          Min: Identity<NotNan<N>>
+{
+    #[inline]
+    fn identity(&self) -> N {
+        Min.identity().into_inner()
     }
 }

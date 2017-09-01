@@ -1,14 +1,15 @@
 //! This module requires the `with-num` feature and supplies implementations for various types from
 //! the `num` crate.
 
+use std::mem;
 use std::ops::{Add as OpAdd, Sub, Mul as OpMul, Div};
 
 use num::{BigInt, BigUint, Complex, Zero, One, Signed, Integer};
 use num::rational::Ratio;
 
-use ops::{Operation, Commutative, Identity, PartialInvert, Invert, IsZero, Nonzero, Add, Mul};
+use super::*;
 
-use std::mem;
+// Bignums
 
 impl IsZero for BigInt {
     #[inline]
@@ -158,6 +159,15 @@ macro_rules! impl_big_nonzero {
 impl_big_nonzero!(BigUint);
 impl_big_nonzero!(BigInt);
 
+impl Identity<BigUint> for Max {
+    #[inline]
+    fn identity(&self) -> BigUint {
+        Zero::zero()
+    }
+}
+
+// Complex
+
 impl<N> Operation<Complex<N>> for Add
     where Add: Operation<N>
 {
@@ -213,6 +223,8 @@ impl<N> PartialInvert<Complex<N>> for Add
         self.invert_mut(&mut result.im, &arg.im);
     }
 }
+
+// Ratio
 
 // It turns out that `Ratio` always clones its arguments, so there's no
 // gain in using the specialized versions of the methods.

@@ -1,6 +1,5 @@
-use std::cmp;
-use std::{u8, u16, u32, u64, i8, i16, i32, i64, usize, isize, f32, f64};
 use std::ops::{Add as OpAdd, Sub, Mul as OpMul, Div, BitXor, BitAnd, BitOr};
+use std::{u8, u16, u32, u64, i8, i16, i32, i64, usize, isize, f32, f64};
 
 use super::*;
 
@@ -107,26 +106,6 @@ macro_rules! impl_primitive_op_checked {
 
 /// Integer implementation macros
 
-macro_rules! impl_primitive_op_cmp {
-    ($O:ty, $N:ty, $op:ident, $identity:expr) => {
-        impl Operation<$N> for $O {
-            #[inline]
-            fn combine(&self, left: &$N, right: &$N) -> $N {
-                cmp::$op(*left, *right)
-            }
-        }
-
-        impl Commutative<$N> for $O {}
-
-        impl Identity<$N> for $O {
-            #[inline]
-            fn identity(&self) -> $N {
-                $identity
-            }
-        }
-    };
-}
-
 macro_rules! impl_primitive_int {
     ($N:ident) => {
         impl IsZero for $N {
@@ -136,6 +115,7 @@ macro_rules! impl_primitive_int {
             }
         }
 
+        impl_primitive_op_partial_inv!(Add, $N, add, sub, 0);
         impl_primitive_op_inv!(WrappingAdd, $N, wrapping_add, wrapping_sub, 0);
         impl_primitive_op!(SaturatingAdd, $N, saturating_add, 0);
         impl_primitive_op!(Mul, $N, mul, 1);
@@ -154,16 +134,19 @@ macro_rules! impl_primitive_int {
         impl_primitive_op_inv!(Add, Wrapping<$N>, add, sub, Wrapping(0));
         impl_primitive_op!(Mul, Wrapping<$N>, mul, Wrapping(1));
 
-        impl_primitive_op_cmp!(Max, $N, max, $N::MIN);
-        impl_primitive_op_cmp!(Min, $N, min, $N::MAX);
-    };
-}
+        impl Identity<$N> for Max {
+            #[inline]
+            fn identity(&self) -> $N {
+                $N::MIN
+            }
+        }
 
-macro_rules! impl_primitive_unsigned_int {
-    ($N:ident) => {
-        impl_primitive_int!($N);
-
-        impl_primitive_op_partial_inv!(Add, $N, add, sub, 0);
+        impl Identity<$N> for Min {
+            #[inline]
+            fn identity(&self) -> $N {
+                $N::MAX
+            }
+        }
     };
 }
 
@@ -171,51 +154,11 @@ macro_rules! impl_primitive_signed_int {
     ($N:ident) => {
         impl_primitive_int!($N);
 
-        impl_primitive_op_inv!(Add, $N, add, sub, 0);
+        impl Invert<$N> for Add {}
     };
 }
 
 // Floating-point implementation macro
-
-macro_rules! impl_primitive_op_cmp_deref {
-    ($O:ty, $N:ty, $cmp:tt, $identity:expr) => {
-        impl Operation<$N> for $O {
-            #[inline]
-            fn combine(&self, left: &$N, right: &$N) -> $N {
-                if left.as_ref().$cmp(right.as_ref()) { *left } else { *right }
-            }
-        }
-
-        impl Commutative<$N> for $O {}
-
-        impl Identity<$N> for $O {
-            #[inline]
-            fn identity(&self) -> $N {
-                $identity
-            }
-        }
-    };
-}
-
-macro_rules! impl_primitive_op_cmp_nan {
-    ($O:ty, $N:ty, $cmp:ident, $take_nan:expr, $identity:expr) => {
-        impl Operation<$N> for $O {
-            #[inline]
-            fn combine(&self, left: &$N, right: &$N) -> $N {
-                let propagate_left = if $take_nan { left.is_nan() } else { right.is_nan() };
-                if propagate_left || left.$cmp(right) { *left } else { *right }
-            }
-        }
-
-        impl Commutative<$N> for $O {}
-
-        impl Identity<$N> for $O {
-            fn identity(&self) -> $N {
-                $identity
-            }
-        }
-    };
-}
 
 macro_rules! impl_primitive_float {
     ($N:ident) => {
@@ -223,6 +166,11 @@ macro_rules! impl_primitive_float {
             #[inline]
             fn is_nan(&self) -> bool {
                 (*self).is_nan()
+            }
+
+            #[inline]
+            fn nan() -> $N {
+                $N::NAN
             }
         }
 
@@ -248,27 +196,33 @@ macro_rules! impl_primitive_float {
         impl_primitive_op_inv_deref!(Mul, FiniteNonzero<$N>, FiniteNonzero::new, mul, div,
                                      FiniteNonzero::new_unchecked(1.0));
 
-        impl_primitive_op_cmp_deref!(Max, NotNan<$N>, gt, NotNan::new_unchecked($N::NEG_INFINITY));
-        impl_primitive_op_cmp_deref!(Min, NotNan<$N>, lt, NotNan::new_unchecked($N::INFINITY));
+        impl Identity<NotNan<$N>> for Max {
+            #[inline]
+            fn identity(&self) -> NotNan<$N> {
+                NotNan::new_unchecked($N::NEG_INFINITY)
+            }
+        }
 
-        impl_primitive_op_cmp_nan!(MaxIgnoreNan, $N, gt, false, $N::NAN);
-        impl_primitive_op_cmp_nan!(MaxTakeNan, $N, gt, true, $N::NEG_INFINITY);
-        impl_primitive_op_cmp_nan!(MinIgnoreNan, $N, lt, false, $N::NAN);
-        impl_primitive_op_cmp_nan!(MinTakeNan, $N, lt, true, $N::INFINITY);
+        impl Identity<NotNan<$N>> for Min {
+            #[inline]
+            fn identity(&self) -> NotNan<$N> {
+                NotNan::new_unchecked($N::INFINITY)
+            }
+        }
     };
 }
 
 // Implementations
 
-impl_primitive_unsigned_int!(u8);
-impl_primitive_unsigned_int!(u16);
-impl_primitive_unsigned_int!(u32);
-impl_primitive_unsigned_int!(u64);
+impl_primitive_int!(u8);
+impl_primitive_int!(u16);
+impl_primitive_int!(u32);
+impl_primitive_int!(u64);
 impl_primitive_signed_int!(i8);
 impl_primitive_signed_int!(i16);
 impl_primitive_signed_int!(i32);
 impl_primitive_signed_int!(i64);
-impl_primitive_unsigned_int!(usize);
+impl_primitive_int!(usize);
 impl_primitive_signed_int!(isize);
 
 impl_primitive_float!(f32);
@@ -354,6 +308,7 @@ mod tests {
             check_identity(&op, values);
 
             let identity = op.identity();
+            println!("identity: {:?}", identity);
 
             assert!(op.combine(&nan, &identity).is_nan(),
                     "`{:?}` is not a right-identity for `{:?}` when applied to NaN",
