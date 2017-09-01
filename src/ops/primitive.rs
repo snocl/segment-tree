@@ -346,6 +346,25 @@ mod tests {
             }
         }
 
+        fn check_identity_nan<'a, N: 'a, O, I>(op: O, values: I, nan: N)
+            where N: PartialEq + Debug + IsNan,
+                  O: Identity<N> + Debug,
+                  I: IntoIterator<Item = &'a N>
+        {
+            check_identity(&op, values);
+
+            let identity = op.identity();
+
+            assert!(op.combine(&nan, &identity).is_nan(),
+                    "`{:?}` is not a right-identity for `{:?}` when applied to NaN",
+                    identity,
+                    op);
+            assert!(op.combine(&identity, &nan).is_nan(),
+                    "`{:?}` is not a left-identity for `{:?}` when applied to NaN",
+                    identity,
+                    op);
+        }
+
         let ints = [0, 1, -1, 0x73beef02, i32::MAX, i32::MIN];
         let option_ints = ints.iter()
             .cloned()
@@ -379,13 +398,13 @@ mod tests {
         check_identity(WithIdentity(Max), &option_ints);
         check_identity(WithIdentity(Min), &option_ints);
 
-        check_identity(Add, &floats);
-        check_identity(Mul, &floats);
+        check_identity_nan(Add, &floats, f32::NAN);
+        check_identity_nan(Mul, &floats, f32::NAN);
 
-        check_identity(MaxTakeNan, &floats);
-        check_identity(MinTakeNan, &floats);
-        check_identity(MaxIgnoreNan, &floats);
-        check_identity(MinIgnoreNan, &floats);
+        check_identity_nan(MaxTakeNan, &floats, f32::NAN);
+        check_identity_nan(MinTakeNan, &floats, f32::NAN);
+        check_identity_nan(MaxIgnoreNan, &floats, f32::NAN);
+        check_identity_nan(MinIgnoreNan, &floats, f32::NAN);
 
         check_identity(Max, &not_nans);
         check_identity(Min, &not_nans);
