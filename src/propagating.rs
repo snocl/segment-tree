@@ -3,6 +3,8 @@ use std::default::Default;
 
 use ops::{Commutative, Identity};
 
+// TODO: Since `n = buf.len() / 2` there's no reason to store that field.
+
 /// This data structure allows range modification and single element queries.
 ///
 /// This tree allocates `2n * sizeof(N)` bytes of memory.
@@ -24,7 +26,7 @@ use ops::{Commutative, Identity};
 /// let mut tree = PointSegment::build(repeat(0).take(1_000_000).collect(), Add);
 ///
 /// // add one to every value between 200 and 1000
-/// tree.modify(200, 500_000, 1);
+/// tree.modify(200, 500_000, &1);
 /// assert_eq!(0, tree.query(100));
 /// assert_eq!(1, tree.query(200));
 /// assert_eq!(1, tree.query(500));
@@ -32,7 +34,7 @@ use ops::{Commutative, Identity};
 /// assert_eq!(0, tree.query(500_000));
 ///
 /// // add five to every value between 0 and 1000
-/// tree.modify(0, 1000, 5);
+/// tree.modify(0, 1000, &5);
 /// assert_eq!(5, tree.query(10));
 /// assert_eq!(6, tree.query(500));
 /// assert_eq!(1, tree.query(10_000));
@@ -147,7 +149,10 @@ impl<N, O> PointSegment<N, O>
     }
 }
 
-impl<N: Clone, O: Identity<N> + Commutative<N> + Clone> Clone for PointSegment<N, O> {
+impl<N, O> Clone for PointSegment<N, O>
+    where N: Clone,
+          O: Commutative<N> + Identity<N> + Clone
+{
     #[inline]
     fn clone(&self) -> PointSegment<N, O> {
         PointSegment {
@@ -157,7 +162,9 @@ impl<N: Clone, O: Identity<N> + Commutative<N> + Clone> Clone for PointSegment<N
         }
     }
 }
-impl<N, O: Identity<N> + Commutative<N> + Default> Default for PointSegment<N, O> {
+impl<N, O> Default for PointSegment<N, O>
+    where O: Commutative<N> + Identity<N> + Default
+{
     #[inline]
     fn default() -> PointSegment<N, O> {
         PointSegment {

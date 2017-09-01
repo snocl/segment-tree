@@ -89,7 +89,9 @@ pub struct SegmentPoint<N, O>
     op: O,
 }
 
-impl<N, O: Operation<N>> SegmentPoint<N, O> {
+impl<N, O> SegmentPoint<N, O>
+    where O: Operation<N>
+{
     /// Builds a tree using the given buffer.  If the given buffer is less than half full, this
     /// function allocates.  This function clones every value in the input array.
     /// Uses `O(len)` time.
@@ -341,7 +343,9 @@ impl<N, O: Operation<N>> SegmentPoint<N, O> {
     }
 }
 
-impl<N, O: Commutative<N>> SegmentPoint<N, O> {
+impl<N, O> SegmentPoint<N, O>
+    where O: Commutative<N>
+{
     /// Combine the value at `p` with `delta`.
     /// Uses `O(log(len))` time.
     #[inline]
@@ -350,7 +354,9 @@ impl<N, O: Commutative<N>> SegmentPoint<N, O> {
     }
 }
 
-impl<N, O: Commutative<N> + Identity<N>> SegmentPoint<N, O> {
+impl<N, O> SegmentPoint<N, O>
+    where O: Commutative<N> + Identity<N>
+{
     /// Computes `a[l] * a[l+1] * ... * a[r-1]`.
     /// Uses `O(log(len))` time.
     ///
@@ -382,7 +388,10 @@ impl<N, O: Commutative<N> + Identity<N>> SegmentPoint<N, O> {
     }
 }
 
-impl<N: Clone, O: Operation<N> + Clone> Clone for SegmentPoint<N, O> {
+impl<N, O> Clone for SegmentPoint<N, O>
+    where N: Clone,
+          O: Operation<N> + Clone
+{
     #[inline]
     fn clone(&self) -> SegmentPoint<N, O> {
         SegmentPoint {
@@ -393,7 +402,10 @@ impl<N: Clone, O: Operation<N> + Clone> Clone for SegmentPoint<N, O> {
     }
 }
 
-impl<N: Debug, O: Operation<N> + Debug> Debug for SegmentPoint<N, O> {
+impl<N, O> Debug for SegmentPoint<N, O>
+    where N: Debug,
+          O: Operation<N> + Debug
+{
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("SegmentPoint")
@@ -403,7 +415,10 @@ impl<N: Debug, O: Operation<N> + Debug> Debug for SegmentPoint<N, O> {
     }
 }
 
-impl<N: PartialEq, O: Operation<N> + PartialEq> PartialEq for SegmentPoint<N, O> {
+impl<N, O> PartialEq for SegmentPoint<N, O>
+    where N: PartialEq,
+          O: Operation<N> + PartialEq
+{
     #[inline]
     fn eq(&self, other: &SegmentPoint<N, O>) -> bool {
         self.op.eq(&other.op) && self.view().eq(other.view())
@@ -415,9 +430,15 @@ impl<N: PartialEq, O: Operation<N> + PartialEq> PartialEq for SegmentPoint<N, O>
     }
 }
 
-impl<N: Eq, O: Operation<N> + Eq> Eq for SegmentPoint<N, O> {}
+impl<N, O> Eq for SegmentPoint<N, O>
+    where N: Eq,
+          O: Operation<N> + Eq
+{
+}
 
-impl<N, O: Operation<N> + Default> Default for SegmentPoint<N, O> {
+impl<N, O> Default for SegmentPoint<N, O>
+    where O: Operation<N> + Default
+{
     #[inline]
     fn default() -> SegmentPoint<N, O> {
         SegmentPoint {
@@ -428,9 +449,14 @@ impl<N, O: Operation<N> + Default> Default for SegmentPoint<N, O> {
     }
 }
 
-impl<N: Hash, O: Operation<N> + Hash> Hash for SegmentPoint<N, O> {
+impl<N, O> Hash for SegmentPoint<N, O>
+    where N: Hash,
+          O: Operation<N> + Hash
+{
     #[inline]
-    fn hash<H: Hasher>(&self, state: &mut H) {
+    fn hash<H>(&self, state: &mut H)
+        where H: Hasher
+    {
         self.view().hash(state);
         self.op.hash(state);
     }
