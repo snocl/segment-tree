@@ -141,7 +141,7 @@ macro_rules! impl_primitive_int {
         impl_primitive_op!(Mul, $N, mul, 1);
         impl_primitive_op_partial_inv_deref!(Mul, Nonzero<$N>, Nonzero::new, mul, div,
                                              Nonzero::new_unchecked(1));
-        impl_primitive_op!(WrappingMul, $N, wrapping_mul, 0);
+        impl_primitive_op!(WrappingMul, $N, wrapping_mul, 1);
         impl_primitive_op!(SaturatingMul, $N, saturating_mul, 1);
 
         impl_primitive_op_checked!(CheckedAdd, $N, checked_add, 0);
@@ -283,7 +283,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ops_nan() {
+    fn cmp_nan() {
         assert_eq!(1.0, MaxIgnoreNan.combine(&0.0, &1.0));
         assert_eq!(1.0, MaxIgnoreNan.combine(&1.0, &0.0));
         assert_eq!(1.0, MaxIgnoreNan.combine(&f32::NAN, &1.0));
@@ -322,11 +322,72 @@ mod tests {
     }
 
     #[test]
-    fn ops_and_identity() {
-        for i in -200i32..201i32 {
-            assert_eq!(And.combine(&i, &And.identity()), i);
+    fn identities() {
+        use std::fmt::Debug;
+
+        fn check_identity<'a, N: 'a, O, I>(op: O, values: I)
+            where N: PartialEq + Debug,
+                  O: Identity<N> + Debug,
+                  I: IntoIterator<Item = &'a N>
+        {
+            let identity = op.identity();
+
+            for value in values {
+                assert_eq!(*value,
+                           op.combine(value, &identity),
+                           "`{:?}` is not a right-identity for `{:?}`",
+                           identity,
+                           op);
+                assert_eq!(*value,
+                           op.combine(&identity, value),
+                           "`{:?}` is not a left-identity for `{:?}`",
+                           identity,
+                           op);
+            }
         }
-        assert_eq!(i32::MAX, And.combine(&i32::MAX, &And.identity()));
-        assert_eq!(i32::MIN, And.combine(&i32::MIN, &And.identity()));
+
+        let ints = [0, 1, -1, 0x73beef02, i32::MAX, i32::MIN];
+        let option_ints = ints.iter()
+            .cloned()
+            .map(Some)
+            .chain([None].iter().cloned())
+            .collect::<Vec<_>>();
+
+        let floats = [0.0, 1.0, -1.0, 739291.32, -233333.3, f32::INFINITY, f32::NEG_INFINITY];
+        let not_nans = floats.iter()
+            .cloned()
+            .map(NotNan::new)
+            .collect::<Vec<_>>();
+
+        check_identity(Add, &ints);
+        check_identity(WrappingAdd, &ints);
+        check_identity(SaturatingAdd, &ints);
+        check_identity(CheckedAdd, &option_ints);
+
+        check_identity(Mul, &ints);
+        check_identity(WrappingMul, &ints);
+        check_identity(SaturatingMul, &ints);
+        check_identity(CheckedMul, &option_ints);
+
+        check_identity(And, &ints);
+        check_identity(Or, &ints);
+        check_identity(Xor, &ints);
+
+        check_identity(Max, &ints);
+        check_identity(Min, &ints);
+
+        check_identity(WithIdentity(Max), &option_ints);
+        check_identity(WithIdentity(Min), &option_ints);
+
+        check_identity(Add, &floats);
+        check_identity(Mul, &floats);
+
+        check_identity(MaxTakeNan, &floats);
+        check_identity(MinTakeNan, &floats);
+        check_identity(MaxIgnoreNan, &floats);
+        check_identity(MinIgnoreNan, &floats);
+
+        check_identity(Max, &not_nans);
+        check_identity(Min, &not_nans);
     }
 }

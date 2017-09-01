@@ -438,6 +438,7 @@ impl<N, M, A, B> Commutative<(N, M)> for Pair<A, B>
     where A: Commutative<N>,
           B: Commutative<M>
 {
+    // Marker trait.
 }
 
 impl<N, M, A, B> Identity<(N, M)> for Pair<A, B>
@@ -470,6 +471,7 @@ impl<N, M, A, B> Invert<(N, M)> for Pair<A, B>
     where A: Invert<N>,
           B: Invert<M>
 {
+    // Marker trait.
 }
 
 impl<N, O> Operation<Option<N>> for WithIdentity<O>
@@ -478,17 +480,10 @@ impl<N, O> Operation<Option<N>> for WithIdentity<O>
 {
     #[inline]
     fn combine(&self, left: &Option<N>, right: &Option<N>) -> Option<N> {
-        let left_value = match *left {
-            Some(ref left) => left,
-            None => return right.clone(),
-        };
-
-        let right_value = match *right {
-            Some(ref right) => right,
-            None => return left.clone(),
-        };
-
-        Some(self.0.combine(left_value, right_value))
+        match (left.as_ref(), right.as_ref()) {
+            (result, None) | (None, result) => result.cloned(),
+            (Some(left), Some(right)) => Some(self.0.combine(left, right)),
+        }
     }
 
     #[inline]
@@ -508,17 +503,17 @@ impl<N, O> Operation<Option<N>> for WithIdentity<O>
 
     #[inline]
     fn combine_mut_right(&self, left: &Option<N>, right: &mut Option<N>) {
-        let left_value = match *left {
+        let left = match *left {
             Some(ref left) => left,
             None => return,
         };
 
         if let Some(ref mut right) = *right {
-            self.0.combine_mut_right(left_value, right);
+            self.0.combine_mut_right(left, right);
             return;
         }
 
-        *right = Some(left_value.clone());
+        *right = Some(left.clone());
     }
 }
 
@@ -526,6 +521,7 @@ impl<N, O> Commutative<Option<N>> for WithIdentity<O>
     where N: Clone,
           O: Operation<N>
 {
+    // Marker trait.
 }
 
 impl<N, O> Identity<Option<N>> for WithIdentity<O>

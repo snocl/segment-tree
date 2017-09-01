@@ -434,6 +434,7 @@ impl<N, O> Eq for SegmentPoint<N, O>
     where N: Eq,
           O: Operation<N> + Eq
 {
+    // Marker trait.
 }
 
 impl<N, O> Default for SegmentPoint<N, O>
