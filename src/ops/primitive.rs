@@ -251,9 +251,9 @@ macro_rules! impl_primitive_float {
         impl_primitive_op_cmp_deref!(Max, NotNan<$N>, gt, NotNan::new_unchecked($N::NEG_INFINITY));
         impl_primitive_op_cmp_deref!(Min, NotNan<$N>, lt, NotNan::new_unchecked($N::INFINITY));
 
-        impl_primitive_op_cmp_nan!(MaxIgnoreNan, $N, gt, false, $N::NEG_INFINITY);
+        impl_primitive_op_cmp_nan!(MaxIgnoreNan, $N, gt, false, $N::NAN);
         impl_primitive_op_cmp_nan!(MaxTakeNan, $N, gt, true, $N::NEG_INFINITY);
-        impl_primitive_op_cmp_nan!(MinIgnoreNan, $N, lt, false, $N::INFINITY);
+        impl_primitive_op_cmp_nan!(MinIgnoreNan, $N, lt, false, $N::NAN);
         impl_primitive_op_cmp_nan!(MinTakeNan, $N, lt, true, $N::INFINITY);
     };
 }
